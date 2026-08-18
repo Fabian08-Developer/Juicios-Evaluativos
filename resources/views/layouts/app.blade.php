@@ -502,6 +502,25 @@
                 <i class="fa-solid fa-clock-rotate-left"></i> <span>Historial</span>
             </a>
         </div>
+
+        <!-- ── PERFIL DE USUARIO Y LOGOUT ── -->
+        <div style="margin-top: auto; padding: 1rem 0.5rem 0.5rem; border-top: 1px solid rgba(255,255,255,0.06);">
+            <div style="display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; border-radius: 14px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); margin-bottom: 0.5rem;">
+                <div style="width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 800; color: #fff; flex-shrink: 0;">
+                    {{ strtoupper(substr(Auth::user()->name ?? 'A', 0, 1)) }}
+                </div>
+                <div style="min-width: 0; overflow: hidden;">
+                    <div style="font-size: 0.82rem; font-weight: 700; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ Auth::user()->name ?? 'Administrador' }}</div>
+                    <div style="font-size: 0.68rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ Auth::user()->email ?? '' }}</div>
+                </div>
+            </div>
+            <form method="POST" action="{{ route('logout') }}">
+                @csrf
+                <button type="submit" style="width: 100%; background: rgba(239,68,68,0.08); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; padding: 0.55rem 1rem; font-size: 0.78rem; font-weight: 700; font-family: inherit; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: all 0.2s;" onmouseover="this.style.background='rgba(239,68,68,0.15)'" onmouseout="this.style.background='rgba(239,68,68,0.08)'">
+                    <i class="fa-solid fa-right-from-bracket"></i> Cerrar Sesión
+                </button>
+            </form>
+        </div>
     </aside>
 
     <!-- ======================== MAIN ======================== -->
@@ -516,7 +535,7 @@
                     En línea
                 </span>
                 <span style="color: var(--text-muted);">Bienvenido,</span>
-                <strong>Instructor</strong>
+                <strong>{{ Auth::user()->name ?? 'Administrador' }}</strong>
             </div>
         </div>
 
