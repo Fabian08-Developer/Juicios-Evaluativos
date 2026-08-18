@@ -362,6 +362,7 @@
         }
         .toast.removing { animation: toastOut 0.3s ease forwards; }
         .toast-success { background: rgba(15,23,42,0.95); border-color: rgba(57,169,0,0.3); color: #86efac; }
+        .toast-warning { background: rgba(15,23,42,0.95); border-color: rgba(245,158,11,0.3); color: #fde68a; }
         .toast-error   { background: rgba(15,23,42,0.95); border-color: rgba(239,68,68,0.3); color: #fca5a5; }
         .toast-icon { font-size: 1.1rem; flex-shrink: 0; }
         .toast-close {
@@ -490,6 +491,9 @@
             <a href="{{ route('acciones.cuellos-botella') }}" class="nav-link {{ request()->routeIs('acciones.cuellos-botella') ? 'active' : '' }}">
                 <i class="fa-solid fa-filter-circle-xmark" style="color: #ef4444;"></i> <span>Cuellos de Botella</span>
             </a>
+            <a href="{{ route('remisiones.index') }}" class="nav-link {{ request()->routeIs('remisiones.*') ? 'active' : '' }}">
+                <i class="fa-solid fa-bullhorn" style="color: #ef4444;"></i> <span>Remisiones & Alertas</span>
+            </a>
         </div>
 
         <div class="nav-group">
@@ -528,7 +532,7 @@
         function showToast(message, type = 'success', duration = 5000) {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
-            const icon = type === 'success' ? 'fa-circle-check' : 'fa-circle-exclamation';
+            const icon = type === 'success' ? 'fa-circle-check' : (type === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-exclamation');
             toast.className = `toast toast-${type}`;
             toast.innerHTML = `
                 <i class="fa-solid ${icon} toast-icon"></i>
@@ -553,8 +557,18 @@
         @if(session('success'))
             document.addEventListener('DOMContentLoaded', () => showToast(@json(session('success')), 'success'));
         @endif
+        @if(session('warning'))
+            document.addEventListener('DOMContentLoaded', () => showToast(@json(session('warning')), 'warning', 8000));
+        @endif
         @if(session('error'))
             document.addEventListener('DOMContentLoaded', () => showToast(@json(session('error')), 'error', 8000));
+        @endif
+        @if($errors->any())
+            document.addEventListener('DOMContentLoaded', () => {
+                @foreach($errors->all() as $err)
+                    showToast(@json($err), 'error', 9000);
+                @endforeach
+            });
         @endif
 
         // ============ BUSCADOR GLOBAL ============

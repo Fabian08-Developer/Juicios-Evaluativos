@@ -17,6 +17,56 @@
         </p>
     </div>
 
+    <!-- Alertas y Errores de Validación / Documento -->
+    @if($errors->any() || session('error'))
+    <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.25); border-radius: 18px; padding: 1.25rem 1.5rem; margin-bottom: 2rem; backdrop-filter: blur(10px); animation: fadeIn 0.3s ease;">
+        <div style="display: flex; align-items: flex-start; gap: 14px;">
+            <div style="width: 38px; height: 38px; border-radius: 12px; background: rgba(239, 68, 68, 0.15); display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5;">
+                <i class="fa-solid fa-triangle-exclamation" style="font-size: 1.1rem;"></i>
+            </div>
+            <div style="flex: 1;">
+                <div style="font-weight: 700; color: #fca5a5; font-size: 0.95rem; margin-bottom: 0.35rem;">
+                    Inconsistencia en el Documento
+                </div>
+                @if(session('error'))
+                    <p style="margin: 0 0 0.5rem 0; font-size: 0.85rem; color: #fecaca; line-height: 1.4;">
+                        {{ session('error') }}
+                    </p>
+                @endif
+                @if($errors->any())
+                    <ul style="margin: 0; padding-left: 1.1rem; font-size: 0.83rem; color: #fecaca; line-height: 1.45;">
+                        @foreach($errors->all() as $err)
+                            <li style="margin-bottom: 0.25rem;">{{ $err }}</li>
+                        @endforeach
+                    </ul>
+                @endif
+                <div style="margin-top: 0.6rem; font-size: 0.75rem; color: var(--text-muted); display: flex; align-items: center; gap: 6px;">
+                    <i class="fa-solid fa-circle-info" style="color: #f59e0b;"></i>
+                    <span>Verifica que el archivo no haya sido modificado tras descargarlo de Sofia Plus.</span>
+                </div>
+            </div>
+        </div>
+    </div>
+    @endif
+
+    @if(session('warning'))
+    <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.25); border-radius: 18px; padding: 1.25rem 1.5rem; margin-bottom: 2rem; backdrop-filter: blur(10px);">
+        <div style="display: flex; align-items: flex-start; gap: 14px;">
+            <div style="width: 38px; height: 38px; border-radius: 12px; background: rgba(245, 158, 11, 0.15); display: flex; align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid rgba(245, 158, 11, 0.3); color: #fcd34d;">
+                <i class="fa-solid fa-circle-exclamation" style="font-size: 1.1rem;"></i>
+            </div>
+            <div style="flex: 1;">
+                <div style="font-weight: 700; color: #fcd34d; font-size: 0.95rem; margin-bottom: 0.25rem;">
+                    Advertencia en la Importación
+                </div>
+                <p style="margin: 0; font-size: 0.85rem; color: #fde68a; line-height: 1.4;">
+                    {{ session('warning') }}
+                </p>
+            </div>
+        </div>
+    </div>
+    @endif
+
     <form id="upload-form" action="{{ route('aprendices.import') }}" method="POST" enctype="multipart/form-data">
         @csrf
 

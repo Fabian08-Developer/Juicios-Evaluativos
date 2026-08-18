@@ -66,10 +66,9 @@ class ExcelFormatoValido implements ValidationRule
 
             if (!empty($faltantes)) {
                 $fail(
-                    'El archivo no tiene el formato de reporte SENA. ' .
-                    'No se encontraron las siguientes secciones: ' .
-                    implode(', ', $faltantes) . '. ' .
-                    'Asegúrate de exportarlo correctamente desde Sofia Plus.'
+                    'El documento subido no cumple con el formato requerido de Sofia Plus. ' .
+                    'No se encontraron las columnas/secciones obligatorias: [' . implode(', ', $faltantes) . ']. ' .
+                    'Por favor asegúrate de subir el reporte oficial de juicios evaluativos descargado de Sofia Plus.'
                 );
                 return;
             }
@@ -77,8 +76,8 @@ class ExcelFormatoValido implements ValidationRule
             // Verificación adicional: debe haber al menos 14 filas (cabecera + datos)
             if ($sheet->getHighestRow() < 14) {
                 $fail(
-                    'El archivo parece estar vacío o incompleto. ' .
-                    'Se esperan al menos 14 filas (encabezado + datos de aprendices).'
+                    'El documento está vacío o incompleto. ' .
+                    'Se requieren al menos 14 filas con encabezado institucional y registros de aprendices.'
                 );
             }
 
@@ -87,10 +86,10 @@ class ExcelFormatoValido implements ValidationRule
             unset($spreadsheet);
 
         } catch (\PhpOffice\PhpSpreadsheet\Reader\Exception $e) {
-            $fail('No se puede leer el archivo Excel. Verifica que no esté corrupto o protegido con contraseña.');
+            $fail('El documento no pudo ser leído. Verifica que sea un archivo Excel válido (.xlsx, .xls) y que no esté dañado ni protegido con contraseña.');
         } catch (\Throwable $e) {
-            // Error inesperado — dejar pasar y que el servicio de importación lo maneje
             \Illuminate\Support\Facades\Log::warning("ExcelFormatoValido: error al prevalidar — " . $e->getMessage());
+            $fail('Ocurrió un problema al validar la estructura del documento: ' . $e->getMessage());
         }
     }
 }

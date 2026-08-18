@@ -98,12 +98,18 @@ class AprendizController extends Controller
 
             $resultado = $servicio->procesarArchivoExcel($filas, $request->Id_Ficha, $importacion);
 
+            // Si no se procesó ningún registro válido
+            if ($resultado['procesados'] === 0 && empty($resultado['errores'])) {
+                return redirect()->back()
+                    ->with('error', 'El documento no contiene registros válidos de aprendices para procesar. Verifica que el archivo corresponda a la ficha seleccionada.');
+            }
+
             // Construir mensaje para el usuario
             $mensaje = $resultado['message'];
             if (!empty($resultado['errores'])) {
-                // Hubo errores por fila — redirigir con advertencia, no con error fatal
+                // Hubo errores por fila — redirigir con advertencia y detalle
                 return redirect()->route('dashboard')
-                    ->with('success', $mensaje)
+                    ->with('warning', $mensaje)
                     ->with('warning_errores', $resultado['errores']);
             }
 
@@ -116,7 +122,7 @@ class AprendizController extends Controller
                 'duracion_segundos' => now()->diffInSeconds($inicio),
                 'detalle'           => $e->getMessage(),
             ]);
-            return back()->with('error', 'Error al procesar el archivo: ' . $e->getMessage());
+            return redirect()->back()->with('error', 'Error al procesar el documento: ' . $e->getMessage());
         }
     }
 

@@ -2,23 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use App\Mail\AlertaBienestarMail;
 use App\Models\Aprendiz;
 use App\Models\Competencia;
 use App\Models\Ficha;
 use App\Models\Funcionario;
 use App\Models\JuicioEvaluativo;
+use App\Models\Remision;
 use App\Models\Resultado;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class InnovacionAcademicaController extends Controller
 {
     // ══════════════════════════════════════════════════════════════════════════
     //  1. SIMULADOR DE SALVACIÓN ACADÉMICA & ACTA DE COMPROMISO PDF
     // ══════════════════════════════════════════════════════════════════════════
+
 
     public function simularSalvacion($id)
     {
@@ -206,14 +210,142 @@ class InnovacionAcademicaController extends Controller
             return back()->with('error', 'Por favor selecciona al menos un aprendiz para emitir la alerta a Bienestar.');
         }
 
-        $aprendices = Aprendiz::whereIn('Id_Aprendiz', $ids)->get();
-        
-        Log::info("[Alerta Temprana SENA] Se emitió alerta oficial a Coordinación/Bienestar para " . count($aprendices) . " aprendices.", [
-            'ids' => $ids,
-            'documentos' => $aprendices->pluck('Documento')->toArray()
+        $aprendices = Aprendiz::with(['ficha.programa', 'juicios' => fn($q) => $q->where('Estado', 0)])
+            ->whereIn('Id_Aprendiz', $ids)
+            ->get();
+
+        $radicadoConsecutivo = (Remision::max('id') ?? 0) + 1;
+        $radicado = 'REM-' . date('Y') . '-' . str_pad($radicadoConsecutivo, 4, '0', STR_PAD_LEFT);
+        $aprendicesDataMail = [];
+        $fichaPrincipal = $aprendices->first()->ficha ?? null;
+
+        foreach ($aprendices as $ap) {
+            $totalJuicios = $ap->juicios()->count();
+            $pendientes = $ap->juicios->count();
+            $score = $totalJuicios > 0 ? round(($pendientes / $totalJuicios) * 100) : 0;
+            if (in_array($ap->Estado, ['RETIRO VOLUNTARIO', 'CANCELADO', 'TRASLADADO'])) {
+                $score = 100;
+            }
+            $score = min(100, $score);
+            $semaforo = $score >= 70 ? 'CRITICO' : 'MODERADO';
+
+            Remision::create([
+                'Id_Aprendiz'      => $ap->Id_Aprendiz,
+                'Id_Ficha'         => $ap->Id_Ficha,
+                'score_riesgo'     => $score,
+                'nivel_semaforo'   => $semaforo,
+                'total_pendientes' => $pendientes,
+                'estado_remision'  => 'PENDIENTE',
+                'radicado'         => $radicado,
+                'motivo'           => "Alerta por riesgo de deserción ({$score}% juicios pendientes)",
+            ]);
+
+            $aprendicesDataMail[] = [
+                'nombre'           => $ap->Nombre,
+                'apellido'         => $ap->Apellido,
+                'documento'        => $ap->Documento,
+                'ficha'            => $ap->Id_Ficha,
+                'pendientes_count' => $pendientes,
+                'score_riesgo'     => $score,
+            ];
+        }
+
+        // Envío de correo formal a leiderfabianramoscano99@gmail.com
+        $correoDestino = 'leiderfabianramoscano99@gmail.com';
+        try {
+            Mail::to($correoDestino)->send(new AlertaBienestarMail(
+                $aprendicesDataMail,
+                $radicado,
+                (string) ($fichaPrincipal->Id_Ficha ?? ''),
+                $fichaPrincipal->programa->Nombre ?? '',
+                now()->format('d/m/Y H:i A')
+            ));
+            Log::info("[Alerta Bienestar] Correo enviado exitosamente a {$correoDestino} (Radicado: {$radicado}).");
+        } catch (\Throwable $e) {
+            Log::error("[Alerta Bienestar] No se pudo enviar el correo a {$correoDestino}: " . $e->getMessage());
+        }
+
+        return redirect()->route('remisiones.index')
+            ->with('success', "✅ Alerta oficial emitida (Radicado: {$radicado}). Se remitieron " . count($aprendices) . " aprendices a Bienestar y se despachó la notificación a {$correoDestino}.");
+    }
+
+    public function historialRemisiones(Request $request)
+    {
+        $fichas = Ficha::with('programa')->get();
+        $fichaFiltro  = $request->get('ficha');
+        $estadoFiltro = $request->get('estado');
+
+        $query = Remision::with(['aprendiz', 'ficha.programa'])->latest();
+
+        if ($fichaFiltro) {
+            $query->where('Id_Ficha', $fichaFiltro);
+        }
+
+        if ($estadoFiltro) {
+            $query->where('estado_remision', $estadoFiltro);
+        }
+
+        $totalCasos       = Remision::count();
+        $pendientesCount  = Remision::where('estado_remision', 'PENDIENTE')->count();
+        $seguimientoCount = Remision::where('estado_remision', 'EN_SEGUIMIENTO')->count();
+        $atendidosCount   = Remision::where('estado_remision', 'ATENDIDO')->count();
+
+        $remisiones = $query->paginate(15)->withQueryString();
+
+        return view('remisiones.index', compact(
+            'remisiones', 'fichas', 'totalCasos',
+            'pendientesCount', 'seguimientoCount', 'atendidosCount'
+        ));
+    }
+
+    public function actualizarEstadoRemision(Request $request, $id)
+    {
+        $request->validate([
+            'estado_remision' => 'required|in:PENDIENTE,EN_SEGUIMIENTO,ATENDIDO,CERRADO'
         ]);
 
-        return back()->with('success', '✅ Alerta masiva enviada exitosamente a Bienestar al Aprendiz y Coordinación Académica para ' . count($aprendices) . ' aprendices seleccionados.');
+        $remision = Remision::findOrFail($id);
+        $remision->update([
+            'estado_remision' => $request->estado_remision,
+            'observaciones'   => $request->observaciones ?? $remision->observaciones
+        ]);
+
+        return back()->with('success', "Estado de la remisión {$remision->radicado} actualizado correctamente.");
+    }
+
+    public function descargarOficioPdf(Request $request)
+    {
+        $radicado = $request->get('radicado');
+        
+        $query = Remision::with(['aprendiz', 'ficha.programa']);
+        if ($radicado) {
+            $query->where('radicado', $radicado);
+        }
+
+        $remisiones = $query->get();
+        if ($remisiones->isEmpty()) {
+            return back()->with('error', 'No se encontraron registros para generar el oficio.');
+        }
+
+        $ficha = $remisiones->first()->ficha ?? null;
+        $aprendices = $remisiones->map(function ($rem) {
+            $ap = $rem->aprendiz;
+            if ($ap) {
+                $ap->remision = $rem;
+            }
+            return $ap;
+        })->filter();
+
+        $radicadoFinal = $radicado ?: ($remisiones->first()->radicado ?? 'REM-' . date('Ymd'));
+
+        $pdf = Pdf::loadView('acciones.oficio-remision-pdf', [
+            'radicado'   => $radicadoFinal,
+            'fecha'      => $remisiones->first()->created_at->format('d/m/Y - H:i'),
+            'ficha'      => $ficha,
+            'aprendices' => $aprendices
+        ])->setPaper('a4', 'portrait');
+
+        return $pdf->download("Oficio_Remision_{$radicadoFinal}.pdf");
     }
 
     // ══════════════════════════════════════════════════════════════════════════

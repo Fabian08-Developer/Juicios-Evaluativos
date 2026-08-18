@@ -54,3 +54,9 @@ Route::prefix('acciones')->name('acciones.')->group(function () {
     // 5. Centro de Notificaciones y Bitácora
     Route::post('/notificar-aprendiz', [InnovacionAcademicaController::class, 'registrarNotificacion'])->name('notificar');
 });
+
+// ── BANDEJA Y GESTIÓN DE REMISIONES A BIENESTAR ─────────────────────────────
+Route::get('/remisiones', [InnovacionAcademicaController::class, 'historialRemisiones'])->name('remisiones.index');
+Route::post('/remisiones/{id}/estado', [InnovacionAcademicaController::class, 'actualizarEstadoRemision'])->name('remisiones.estado');
+Route::get('/remisiones/oficio-pdf', [InnovacionAcademicaController::class, 'descargarOficioPdf'])->name('remisiones.oficio-pdf');
+
