@@ -48,12 +48,44 @@ class AprendizController extends Controller
         $retiroVoluntario = (clone $statsQuery)->where('Estado', 'RETIRO VOLUNTARIO')->count();
         $traslado         = (clone $statsQuery)->where('Estado', 'TRASLADADO')->count();
 
-        $aprendices = $query->latest()->paginate(15)->withQueryString();
+        // ── Ordenamiento Dinámico (Alfabético / Documento / Fecha) ─────────
+        $orden = $request->get('orden', 'nombre_asc');
+        switch ($orden) {
+            case 'nombre_asc':
+                $query->orderBy('Nombre', 'asc')->orderBy('Apellido', 'asc');
+                break;
+            case 'nombre_desc':
+                $query->orderBy('Nombre', 'desc')->orderBy('Apellido', 'desc');
+                break;
+            case 'apellido_asc':
+                $query->orderBy('Apellido', 'asc')->orderBy('Nombre', 'asc');
+                break;
+            case 'apellido_desc':
+                $query->orderBy('Apellido', 'desc')->orderBy('Nombre', 'desc');
+                break;
+            case 'documento_asc':
+                $query->orderByRaw('CAST("Documento" AS BIGINT) ASC');
+                break;
+            case 'documento_desc':
+                $query->orderByRaw('CAST("Documento" AS BIGINT) DESC');
+                break;
+            case 'estado_asc':
+                $query->orderBy('Estado', 'asc');
+                break;
+            case 'recientes':
+                $query->latest();
+                break;
+            default:
+                $query->orderBy('Nombre', 'asc')->orderBy('Apellido', 'asc');
+                break;
+        }
+
+        $aprendices = $query->paginate(15)->withQueryString();
         $fichas     = Ficha::all();
 
         return view('aprendices.index', compact(
             'aprendices', 'fichas', 'totalAprendices',
-            'enFormacion', 'retiroVoluntario', 'traslado'
+            'enFormacion', 'retiroVoluntario', 'traslado', 'orden'
         ));
     }
 

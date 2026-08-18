@@ -62,14 +62,14 @@
 <!-- Filtros -->
 <div class="card" style="margin-bottom: 2rem; padding: 1.5rem;">
     <form action="{{ route('aprendices.index') }}" method="GET"
-          style="display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 1rem; align-items: end;">
+          style="display: grid; grid-template-columns: 1.8fr 1.2fr 1fr 1.2fr auto; gap: 1rem; align-items: end;">
         <div>
             <label style="display:block;font-size:0.72rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;">Buscar</label>
             <input type="text" name="search" value="{{ request('search') }}" class="form-control" placeholder="Nombre, apellido o documento...">
         </div>
         <div>
             <label style="display:block;font-size:0.72rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;">Ficha</label>
-            <select name="ficha" class="form-control">
+            <select name="ficha" class="form-control" onchange="this.form.submit()">
                 <option value="">Todas</option>
                 @foreach($fichas as $ficha)
                     <option value="{{ $ficha->Id_Ficha }}" {{ request('ficha') == $ficha->Id_Ficha ? 'selected' : '' }}>
@@ -80,18 +80,31 @@
         </div>
         <div>
             <label style="display:block;font-size:0.72rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;">Estado</label>
-            <select name="estado" class="form-control">
+            <select name="estado" class="form-control" onchange="this.form.submit()">
                 <option value="">Todos</option>
                 <option value="EN FORMACION"      {{ request('estado') == 'EN FORMACION'      ? 'selected' : '' }}>En Formación</option>
                 <option value="TRASLADADO"         {{ request('estado') == 'TRASLADADO'         ? 'selected' : '' }}>Trasladado</option>
                 <option value="RETIRO VOLUNTARIO"  {{ request('estado') == 'RETIRO VOLUNTARIO'  ? 'selected' : '' }}>Retiro Voluntario</option>
             </select>
         </div>
+        <div>
+            <label style="display:block;font-size:0.72rem;font-weight:700;color:var(--text-muted);margin-bottom:0.5rem;text-transform:uppercase;">Ordenar por</label>
+            <select name="orden" class="form-control" onchange="this.form.submit()">
+                <option value="nombre_asc"    {{ request('orden', $orden ?? 'nombre_asc') == 'nombre_asc'    ? 'selected' : '' }}>🔤 Nombre (A - Z)</option>
+                <option value="nombre_desc"   {{ request('orden') == 'nombre_desc'   ? 'selected' : '' }}>🔤 Nombre (Z - A)</option>
+                <option value="apellido_asc"  {{ request('orden') == 'apellido_asc'  ? 'selected' : '' }}>🔤 Apellido (A - Z)</option>
+                <option value="apellido_desc" {{ request('orden') == 'apellido_desc' ? 'selected' : '' }}>🔤 Apellido (Z - A)</option>
+                <option value="documento_asc" {{ request('orden') == 'documento_asc' ? 'selected' : '' }}>🔢 Documento (Menor a Mayor)</option>
+                <option value="documento_desc"{{ request('orden') == 'documento_desc'? 'selected' : '' }}>🔢 Documento (Mayor a Menor)</option>
+                <option value="estado_asc"    {{ request('orden') == 'estado_asc'    ? 'selected' : '' }}>📋 Por Estado</option>
+                <option value="recientes"     {{ request('orden') == 'recientes'     ? 'selected' : '' }}>🕒 Más Recientes</option>
+            </select>
+        </div>
         <div style="display:flex;gap:0.5rem;">
-            <button type="submit" class="btn btn-primary" style="padding:0.6rem 1rem;">
+            <button type="submit" class="btn btn-primary" style="padding:0.6rem 1rem;" title="Filtrar">
                 <i class="fa-solid fa-magnifying-glass"></i>
             </button>
-            <a href="{{ route('aprendices.index') }}" class="btn btn-outline" style="padding:0.6rem 1rem;" title="Limpiar">
+            <a href="{{ route('aprendices.index') }}" class="btn btn-outline" style="padding:0.6rem 1rem;" title="Restablecer filtros">
                 <i class="fa-solid fa-rotate-left"></i>
             </a>
         </div>
@@ -104,10 +117,66 @@
         <table style="width:100%;border-collapse:separate;border-spacing:0 0.4rem;">
             <thead>
                 <tr style="text-align:left;color:var(--text-muted);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.05em;">
-                    <th style="padding:0.75rem 1rem;">Documento</th>
-                    <th style="padding:0.75rem 1rem;">Nombre Completo</th>
+                    <!-- Columna Documento (Sortable) -->
+                    @php
+                        $docNext = request('orden') == 'documento_asc' ? 'documento_desc' : 'documento_asc';
+                        $isDocActive = in_array(request('orden'), ['documento_asc', 'documento_desc']);
+                    @endphp
+                    <th style="padding:0.75rem 1rem;">
+                        <a href="{{ request()->fullUrlWithQuery(['orden' => $docNext]) }}"
+                           style="color: {{ $isDocActive ? 'var(--primary)' : 'var(--text-muted)' }}; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; transition: color 0.2s;"
+                           title="Ordenar por Número de Identificación">
+                            <span>Documento</span>
+                            @if(request('orden') == 'documento_asc')
+                                <i class="fa-solid fa-arrow-up-1-9" style="font-size: 0.75rem;"></i>
+                            @elseif(request('orden') == 'documento_desc')
+                                <i class="fa-solid fa-arrow-down-9-1" style="font-size: 0.75rem;"></i>
+                            @else
+                                <i class="fa-solid fa-sort" style="font-size: 0.7rem; opacity: 0.4;"></i>
+                            @endif
+                        </a>
+                    </th>
+
+                    <!-- Columna Nombre Completo (Sortable) -->
+                    @php
+                        $nomNext = request('orden', 'nombre_asc') == 'nombre_asc' ? 'nombre_desc' : 'nombre_asc';
+                        $isNomActive = in_array(request('orden', 'nombre_asc'), ['nombre_asc', 'nombre_desc', 'apellido_asc', 'apellido_desc']);
+                    @endphp
+                    <th style="padding:0.75rem 1rem;">
+                        <a href="{{ request()->fullUrlWithQuery(['orden' => $nomNext]) }}"
+                           style="color: {{ $isNomActive ? 'var(--primary)' : 'var(--text-muted)' }}; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; transition: color 0.2s;"
+                           title="Ordenar Alfabéticamente por Nombre">
+                            <span>Nombre Completo</span>
+                            @if(request('orden', 'nombre_asc') == 'nombre_asc')
+                                <i class="fa-solid fa-arrow-down-a-z" style="font-size: 0.75rem;"></i>
+                            @elseif(request('orden') == 'nombre_desc')
+                                <i class="fa-solid fa-arrow-up-z-a" style="font-size: 0.75rem;"></i>
+                            @else
+                                <i class="fa-solid fa-sort" style="font-size: 0.7rem; opacity: 0.4;"></i>
+                            @endif
+                        </a>
+                    </th>
+
                     <th style="padding:0.75rem 1rem;">Ficha / Programa</th>
-                    <th style="padding:0.75rem 1rem;">Estado</th>
+
+                    <!-- Columna Estado (Sortable) -->
+                    @php
+                        $estadoNext = request('orden') == 'estado_asc' ? 'recientes' : 'estado_asc';
+                        $isEstadoActive = request('orden') == 'estado_asc';
+                    @endphp
+                    <th style="padding:0.75rem 1rem;">
+                        <a href="{{ request()->fullUrlWithQuery(['orden' => $estadoNext]) }}"
+                           style="color: {{ $isEstadoActive ? 'var(--primary)' : 'var(--text-muted)' }}; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; transition: color 0.2s;"
+                           title="Ordenar por Estado">
+                            <span>Estado</span>
+                            @if($isEstadoActive)
+                                <i class="fa-solid fa-arrow-down-short-wide" style="font-size: 0.75rem;"></i>
+                            @else
+                                <i class="fa-solid fa-sort" style="font-size: 0.7rem; opacity: 0.4;"></i>
+                            @endif
+                        </a>
+                    </th>
+
                     <th style="padding:0.75rem 1rem;text-align:right;">Acciones</th>
                 </tr>
             </thead>

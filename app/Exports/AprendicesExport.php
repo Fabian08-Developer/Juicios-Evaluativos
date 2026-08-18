@@ -40,6 +40,31 @@ class AprendicesExport implements FromQuery, WithHeadings, WithMapping, WithStyl
             $query->where('Estado', $this->filters['estado']);
         }
 
+        $orden = $this->filters['orden'] ?? 'nombre_asc';
+        switch ($orden) {
+            case 'nombre_asc':
+                $query->orderBy('Nombre', 'asc')->orderBy('Apellido', 'asc');
+                break;
+            case 'nombre_desc':
+                $query->orderBy('Nombre', 'desc')->orderBy('Apellido', 'desc');
+                break;
+            case 'apellido_asc':
+                $query->orderBy('Apellido', 'asc')->orderBy('Nombre', 'asc');
+                break;
+            case 'apellido_desc':
+                $query->orderBy('Apellido', 'desc')->orderBy('Nombre', 'desc');
+                break;
+            case 'documento_asc':
+                $query->orderByRaw('CAST("Documento" AS BIGINT) ASC');
+                break;
+            case 'documento_desc':
+                $query->orderByRaw('CAST("Documento" AS BIGINT) DESC');
+                break;
+            default:
+                $query->orderBy('Nombre', 'asc')->orderBy('Apellido', 'asc');
+                break;
+        }
+
         return $query;
     }
 
