@@ -117,11 +117,6 @@
             <!-- Listado de aprendices para citar -->
             <div style="max-height: 480px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; padding-right: 0.5rem;">
                 @foreach($grupoRefuerzo as $ap)
-                    @php
-                        // Número de teléfono simulado para WhatsApp Web real
-                        $telefonoSimulado = '57300' . substr($ap->Documento, -7);
-                        $mensaje = urlencode("Hola {$ap->Nombre}, te informamos desde el SENA que en la ficha {$ap->Id_Ficha} presentas resultados pendientes en la competencia '{$competenciaObj->Nombre}'. Te citamos a sesión de refuerzo pedagógico este viernes. ¡Te esperamos!");
-                    @endphp
                     <div style="background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 0.85rem 1rem; display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;">
                         <div>
                             <div style="font-weight: 800; font-size: 0.9rem; color: #fff;">{{ $ap->Nombre }} {{ $ap->Apellido }}</div>
@@ -129,13 +124,6 @@
                         </div>
 
                         <div style="display: flex; gap: 0.5rem;">
-                            <!-- Botón WhatsApp Web directo -->
-                            <a href="https://api.whatsapp.com/send?phone={{ $telefonoSimulado }}&text={{ $mensaje }}" target="_blank"
-                               title="Notificar citación por WhatsApp"
-                               style="width: 34px; height: 34px; background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1rem; text-decoration: none;">
-                                <i class="fa-brands fa-whatsapp"></i>
-                            </a>
-                            
                             <!-- Botón Perfil -->
                             <a href="{{ route('aprendices.show', $ap->Id_Aprendiz) }}" title="Ver Expediente"
                                style="width: 34px; height: 34px; background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; text-decoration: none;">

@@ -142,6 +142,8 @@ class InnovacionAcademicaController extends Controller
     {
         $fichaId = $request->get('ficha_id');
         $semaforoFiltro = $request->get('semaforo'); // critico, moderado, estable
+        $search = $request->get('search');
+        $estadoFiltro = $request->get('estado');
         $fichas = Ficha::with('programa')->get();
 
         $aprendicesQuery = Aprendiz::withCount([
@@ -152,6 +154,14 @@ class InnovacionAcademicaController extends Controller
 
         if ($fichaId) {
             $aprendicesQuery->deFicha($fichaId);
+        }
+
+        if (!empty($search)) {
+            $aprendicesQuery->buscar($search);
+        }
+
+        if (!empty($estadoFiltro)) {
+            $aprendicesQuery->where('Estado', $estadoFiltro);
         }
 
         $aprendices = $aprendicesQuery->get()->map(function ($a) {
@@ -186,18 +196,18 @@ class InnovacionAcademicaController extends Controller
             return $a;
         });
 
+        // Conteos para las tarjetas superiores (calculados sobre el conjunto de aprendices antes de filtrar por semaforo)
+        $conteoCritico   = $aprendices->where('semaforo', 'critico')->count();
+        $conteoModerado  = $aprendices->where('semaforo', 'moderado')->count();
+        $conteoEstable   = $aprendices->where('semaforo', 'estable')->count();
+
         // Filtrado por semáforo si se solicitó
         if ($semaforoFiltro) {
             $aprendices = $aprendices->where('semaforo', $semaforoFiltro)->values();
         }
 
-        // Conteos para las tarjetas superiores
-        $conteoCritico   = $aprendices->where('semaforo', 'critico')->count();
-        $conteoModerado  = $aprendices->where('semaforo', 'moderado')->count();
-        $conteoEstable   = $aprendices->where('semaforo', 'estable')->count();
-
         return view('acciones.diagnostico-desercion', compact(
-            'fichas', 'fichaId', 'semaforoFiltro', 'aprendices',
+            'fichas', 'fichaId', 'semaforoFiltro', 'search', 'estadoFiltro', 'aprendices',
             'conteoCritico', 'conteoModerado', 'conteoEstable'
         ));
     }
@@ -358,6 +368,8 @@ class InnovacionAcademicaController extends Controller
         $fichaId = $request->get('ficha_id', $fichas->first()->Id_Ficha ?? null);
         $competencias = collect([]);
         $competenciaId = $request->get('competencia_id');
+        $search = $request->get('search');
+        $estadoFiltro = $request->get('estado');
 
         $aprendices = collect([]);
         $resultados = collect([]);
@@ -376,8 +388,18 @@ class InnovacionAcademicaController extends Controller
                 $competenciaId = $competencias->first()->Id_Competencia;
             }
 
-            // Obtener aprendices de la ficha
-            $aprendices = Aprendiz::where('Id_Ficha', $fichaId)->orderBy('Apellido')->get();
+            // Obtener aprendices de la ficha con filtros opcionales
+            $aprendicesQuery = Aprendiz::where('Id_Ficha', $fichaId);
+
+            if (!empty($search)) {
+                $aprendicesQuery->buscar($search);
+            }
+
+            if (!empty($estadoFiltro)) {
+                $aprendicesQuery->where('Estado', $estadoFiltro);
+            }
+
+            $aprendices = $aprendicesQuery->orderBy('Apellido')->orderBy('Nombre')->get();
 
             // Obtener resultados de aprendizaje de la competencia seleccionada
             if ($competenciaId) {
@@ -397,7 +419,7 @@ class InnovacionAcademicaController extends Controller
         }
 
         return view('acciones.matriz-evaluacion', compact(
-            'fichas', 'fichaId', 'competencias', 'competenciaId',
+            'fichas', 'fichaId', 'competencias', 'competenciaId', 'search', 'estadoFiltro',
             'aprendices', 'resultados', 'juiciosMap'
         ));
     }

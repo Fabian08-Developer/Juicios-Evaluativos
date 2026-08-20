@@ -77,15 +77,26 @@ class Aprendiz extends Model
     }
 
     /**
-     * Búsqueda de texto en nombre, apellido o documento.
+     * Búsqueda de texto en nombre, apellido, nombre completo, documento o tarjeta.
      * Uso: Aprendiz::buscar('Juan')->get()
      */
     public function scopeBuscar(Builder $query, string $termino): Builder
     {
-        return $query->where(function (Builder $q) use ($termino) {
-            $q->where('Nombre',    'like', "%{$termino}%")
-              ->orWhere('Apellido', 'like', "%{$termino}%")
-              ->orWhere('Documento','like', "%{$termino}%");
+        $termino = trim($termino);
+        if ($termino === '') {
+            return $query;
+        }
+
+        $isPgsql = config('database.default') === 'pgsql';
+        $operator = $isPgsql ? 'ilike' : 'like';
+
+        return $query->where(function (Builder $q) use ($termino, $operator) {
+            $q->where('Nombre', $operator, "%{$termino}%")
+              ->orWhere('Apellido', $operator, "%{$termino}%")
+              ->orWhere('Documento', $operator, "%{$termino}%")
+              ->orWhere('Tipo_Documento', $operator, "%{$termino}%")
+              ->orWhereRaw("CONCAT(\"Nombre\", ' ', \"Apellido\") {$operator} ?", ["%{$termino}%"])
+              ->orWhereRaw("CONCAT(\"Apellido\", ' ', \"Nombre\") {$operator} ?", ["%{$termino}%"]);
         });
     }
 

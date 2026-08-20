@@ -208,14 +208,6 @@
                                 <i class="fa-solid fa-file-pdf"></i>
                             </a>
 
-                            <!-- Contactar por WhatsApp -->
-                            <a href="https://wa.me/{{ $telSimulado }}?text={{ $msjWp }}" target="_blank"
-                               class="btn btn-outline"
-                               style="padding: 0; width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; color: #22c55e; border-radius: 6px; font-size: 0.75rem;"
-                               title="WhatsApp">
-                                <i class="fa-brands fa-whatsapp"></i>
-                            </a>
-
                             <!-- Ver Expediente / Plan de Salvación -->
                             <a href="{{ route('acciones.simulador', $rem->Id_Aprendiz) }}"
                                class="btn btn-outline"

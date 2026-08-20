@@ -6,7 +6,7 @@
 <div style="max-width: 1450px; margin: 0 auto;">
 
     <!-- Encabezado superior y selectores de Ficha y Competencia -->
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; flex-wrap: wrap; gap: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.75rem; flex-wrap: wrap; gap: 1.5rem;">
         <div>
             <h1 style="font-size: 1.85rem; font-weight: 800; color: #fff; margin: 0; display: flex; align-items: center; gap: 0.75rem;">
                 <span style="background: rgba(57, 169, 0, 0.15); color: var(--primary); padding: 0.45rem 0.85rem; border-radius: 14px; font-size: 1.25rem;">
@@ -19,9 +19,21 @@
             </p>
         </div>
 
-        <!-- Filtros de Ficha y Competencia -->
-        <form method="GET" action="{{ route('acciones.matriz') }}" id="form-matriz-filtros" style="display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; background: rgba(0,0,0,0.3); padding: 0.6rem 1.2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08);">
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
+        <!-- Filtros Principales (Ficha, Competencia, Búsqueda y Estado) -->
+        <form method="GET" action="{{ route('acciones.matriz') }}" id="form-matriz-filtros" style="display: flex; gap: 0.65rem; flex-wrap: wrap; align-items: center; background: rgba(0,0,0,0.3); padding: 0.75rem 1.2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08);">
+            
+            <!-- Campo de búsqueda por texto / tarjeta / nombre -->
+            <div style="display: flex; align-items: center; gap: 0.4rem; flex: 1 1 200px; min-width: 180px;">
+                <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;"><i class="fa-solid fa-magnifying-glass"></i></label>
+                <input type="text" name="search" id="input-busqueda-matriz-server" value="{{ $search ?? '' }}"
+                       placeholder="Buscar por nombre, tarjeta..." 
+                       class="form-control" 
+                       style="padding: 0.45rem 0.8rem; font-size: 0.85rem; border-radius: 10px; width: 100%;"
+                       autocomplete="off">
+            </div>
+
+            <!-- Selector de Ficha -->
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
                 <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Ficha:</label>
                 <select name="ficha_id" onchange="document.getElementById('form-matriz-filtros').submit()" class="form-control" style="padding: 0.45rem 2.2rem 0.45rem 0.8rem; font-size: 0.85rem; border-radius: 10px; width: auto; font-weight: 700; color: var(--primary);">
                     @foreach($fichas as $f)
@@ -33,17 +45,42 @@
             </div>
 
             @if($competencias->isNotEmpty())
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <!-- Selector de Competencia -->
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
                 <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Competencia:</label>
-                <select name="competencia_id" onchange="document.getElementById('form-matriz-filtros').submit()" class="form-control" style="padding: 0.45rem 2.2rem 0.45rem 0.8rem; font-size: 0.85rem; border-radius: 10px; max-width: 380px;">
+                <select name="competencia_id" onchange="document.getElementById('form-matriz-filtros').submit()" class="form-control" style="padding: 0.45rem 2.2rem 0.45rem 0.8rem; font-size: 0.85rem; border-radius: 10px; max-width: 320px;">
                     @foreach($competencias as $c)
                         <option value="{{ $c->Id_Competencia }}" {{ $competenciaId == $c->Id_Competencia ? 'selected' : '' }}>
-                            [{{ $c->Codigo }}] {{ Str::limit($c->Nombre, 55) }}
+                            [{{ $c->Codigo }}] {{ Str::limit($c->Nombre, 50) }}
                         </option>
                     @endforeach
                 </select>
             </div>
             @endif
+
+            <!-- Selector de Estado -->
+            <div style="display: flex; align-items: center; gap: 0.4rem;">
+                <label style="font-size: 0.75rem; font-weight: 700; color: var(--text-muted); text-transform: uppercase;">Estado:</label>
+                <select name="estado" onchange="document.getElementById('form-matriz-filtros').submit()" class="form-control" style="padding: 0.45rem 2.2rem 0.45rem 0.8rem; font-size: 0.85rem; border-radius: 10px; width: auto;">
+                    <option value="">— Todos —</option>
+                    <option value="EN FORMACION" {{ ($estadoFiltro ?? '') == 'EN FORMACION' ? 'selected' : '' }}>En Formación</option>
+                    <option value="RETIRO VOLUNTARIO" {{ ($estadoFiltro ?? '') == 'RETIRO VOLUNTARIO' ? 'selected' : '' }}>Retiro Voluntario</option>
+                    <option value="CANCELADO" {{ ($estadoFiltro ?? '') == 'CANCELADO' ? 'selected' : '' }}>Cancelado</option>
+                    <option value="TRASLADADO" {{ ($estadoFiltro ?? '') == 'TRASLADADO' ? 'selected' : '' }}>Trasladado</option>
+                </select>
+            </div>
+
+            <div style="display: flex; gap: 0.4rem; align-items: center;">
+                <button type="submit" class="btn" style="background: var(--primary); color: #000; font-weight: 800; padding: 0.45rem 0.8rem; border-radius: 10px; font-size: 0.8rem;" title="Filtrar">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                </button>
+
+                @if(!empty($search) || !empty($estadoFiltro))
+                    <a href="{{ route('acciones.matriz', ['ficha_id' => $fichaId, 'competencia_id' => $competenciaId]) }}" class="btn" style="background: rgba(255,255,255,0.08); color: #fff; padding: 0.45rem 0.8rem; border-radius: 10px; font-size: 0.8rem;" title="Limpiar búsqueda">
+                        <i class="fa-solid fa-rotate-left"></i>
+                    </a>
+                @endif
+            </div>
         </form>
     </div>
 
@@ -53,31 +90,137 @@
         <span id="toast-mensaje">Autoguardado en servidor...</span>
     </div>
 
+    <!-- Modal de Confirmación Personalizado -->
+    <div id="modal-confirmar-overlay" style="
+        position: fixed; inset: 0; z-index: 99999;
+        background: rgba(0, 0, 0, 0.65);
+        backdrop-filter: blur(6px);
+        display: flex; align-items: center; justify-content: center;
+        opacity: 0; pointer-events: none;
+        transition: opacity 0.25s ease;
+    ">
+        <div id="modal-confirmar-box" style="
+            background: linear-gradient(135deg, rgba(15,23,42,0.98) 0%, rgba(22,33,55,0.98) 100%);
+            border: 1px solid rgba(57,169,0,0.3);
+            border-radius: 20px;
+            padding: 2rem 2.25rem;
+            max-width: 420px;
+            width: 90%;
+            box-shadow: 0 30px 80px -10px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.05);
+            transform: scale(0.88) translateY(16px);
+            transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s ease;
+            opacity: 0;
+        ">
+            <!-- Icono -->
+            <div style="text-align: center; margin-bottom: 1.25rem;">
+                <div style="
+                    display: inline-flex; align-items: center; justify-content: center;
+                    width: 60px; height: 60px; border-radius: 50%;
+                    background: rgba(16,185,129,0.15);
+                    border: 2px solid rgba(16,185,129,0.35);
+                    box-shadow: 0 0 24px rgba(16,185,129,0.2);
+                    margin-bottom: 0.25rem;
+                ">
+                    <i class="fa-solid fa-check-double" style="font-size: 1.5rem; color: #10b981;"></i>
+                </div>
+            </div>
+
+            <!-- Título -->
+            <h3 style="
+                text-align: center; font-size: 1.05rem; font-weight: 800;
+                color: #f1f5f9; margin: 0 0 0.65rem;
+                line-height: 1.4;
+            ">Aprobar Todo en Pantalla</h3>
+
+            <!-- Mensaje -->
+            <p style="
+                text-align: center; font-size: 0.9rem; color: #94a3b8;
+                margin: 0 0 1.75rem; line-height: 1.6;
+            ">
+                ¿Deseas cambiar a
+                <strong style="color: #10b981; font-weight: 800;">APROBADO</strong>
+                todas las celdas visibles en pantalla para esta competencia?
+            </p>
+
+            <!-- Botones -->
+            <div style="display: flex; gap: 0.75rem;">
+                <button id="modal-btn-cancelar" style="
+                    flex: 1; padding: 0.7rem 1rem;
+                    border-radius: 12px; border: 1px solid rgba(255,255,255,0.12);
+                    background: rgba(255,255,255,0.06); color: #94a3b8;
+                    font-size: 0.9rem; font-weight: 700; cursor: pointer;
+                    transition: all 0.2s ease;
+                " onmouseover="this.style.background='rgba(255,255,255,0.11)';this.style.color='#f1f5f9';"
+                   onmouseout="this.style.background='rgba(255,255,255,0.06)';this.style.color='#94a3b8';">
+                    <i class="fa-solid fa-xmark" style="margin-right: 0.35rem;"></i>Cancelar
+                </button>
+                <button id="modal-btn-aceptar" style="
+                    flex: 1; padding: 0.7rem 1rem;
+                    border-radius: 12px; border: 1px solid rgba(16,185,129,0.4);
+                    background: linear-gradient(135deg, rgba(16,185,129,0.25), rgba(5,150,105,0.35));
+                    color: #10b981;
+                    font-size: 0.9rem; font-weight: 800; cursor: pointer;
+                    box-shadow: 0 4px 15px rgba(16,185,129,0.2);
+                    transition: all 0.2s ease;
+                " onmouseover="this.style.background='linear-gradient(135deg, rgba(16,185,129,0.4), rgba(5,150,105,0.5))';this.style.boxShadow='0 6px 20px rgba(16,185,129,0.35)';this.style.color='#fff';"
+                   onmouseout="this.style.background='linear-gradient(135deg, rgba(16,185,129,0.25), rgba(5,150,105,0.35))';this.style.boxShadow='0 4px 15px rgba(16,185,129,0.2)';this.style.color='#10b981';">
+                    <i class="fa-solid fa-check-double" style="margin-right: 0.35rem;"></i>Aceptar
+                </button>
+            </div>
+        </div>
+    </div>
+
     @if($aprendices->isEmpty() || $resultados->isEmpty())
         <div class="card" style="text-align: center; padding: 4rem 2rem;">
             <i class="fa-solid fa-folder-open" style="font-size: 3.5rem; color: var(--text-muted); margin-bottom: 1rem;"></i>
             <h3 style="color: #fff; font-weight: 800;">No hay datos para evaluar</h3>
-            <p style="color: var(--text-muted); max-width: 450px; margin: 0.5rem auto 0;">Verifica que la ficha seleccionada tenga aprendices cargados y competencias asignadas.</p>
+            <p style="color: var(--text-muted); max-width: 450px; margin: 0.5rem auto 0;">Verifica que la ficha seleccionada tenga aprendices cargados y competencias asignadas con los filtros actuales.</p>
+            @if(!empty($search) || !empty($estadoFiltro))
+                <div style="margin-top: 1.5rem;">
+                    <a href="{{ route('acciones.matriz', ['ficha_id' => $fichaId, 'competencia_id' => $competenciaId]) }}" class="btn btn-primary" style="padding: 0.6rem 1.2rem;">
+                        <i class="fa-solid fa-rotate-left"></i> Restablecer Filtros
+                    </a>
+                </div>
+            @endif
         </div>
     @else
-        <!-- Panel de instrucciones y acciones rápidas -->
-        <div class="card" style="padding: 1rem 1.5rem; margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; background: rgba(0,0,0,0.25);">
-            <div style="display: flex; align-items: center; gap: 1.5rem; font-size: 0.85rem; color: var(--text-muted);">
-                <span><i class="fa-solid fa-circle-info" style="color: var(--primary);"></i> <strong>Instrucciones:</strong> Haz clic directamente en el interruptor de cualquier celda para alternar entre <em>Aprobado</em> y <em>Pendiente</em>.</span>
-                <span style="display: flex; align-items: center; gap: 0.4rem;"><span style="width: 12px; height: 12px; background: #10b981; border-radius: 50%; display: inline-block;"></span> Aprobado (1)</span>
-                <span style="display: flex; align-items: center; gap: 0.4rem;"><span style="width: 12px; height: 12px; background: #ef4444; border-radius: 50%; display: inline-block;"></span> Pendiente (0)</span>
+        <!-- Barra de herramientas: Búsqueda rápida en vivo y Filtros rápidos de Progreso -->
+        <div class="card" style="padding: 0.9rem 1.4rem; margin-bottom: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; background: rgba(0,0,0,0.25);">
+            
+            <!-- Buscador reactivo instantáneo en cliente -->
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex: 1 1 280px; min-width: 240px; position: relative;">
+                <i class="fa-solid fa-bolt" style="color: var(--primary); font-size: 1rem;" title="Filtrado rápido en vivo"></i>
+                <input type="text" id="input-matriz-live-search" placeholder="Filtrar en pantalla por nombre o tarjeta / documento..." 
+                       class="form-control" style="padding: 0.45rem 0.85rem; font-size: 0.85rem; border-radius: 10px; width: 100%;" autocomplete="off">
             </div>
 
-            <div style="display: flex; gap: 0.75rem;">
-                <button type="button" onclick="aprobarTodosLote()" class="btn" style="background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); font-weight: 800; font-size: 0.8rem; padding: 0.5rem 1rem; border-radius: 10px; cursor: pointer;">
-                    <i class="fa-solid fa-check-double"></i> Aprobar Todo en Pantalla
+            <!-- Filtros rápidos por estado de avance -->
+            <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">
+                <button type="button" onclick="filtrarProgreso('todos')" id="btn-filtro-todos" class="btn active-filter-pill" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; font-weight: 700; border-radius: 8px; border: 1px solid rgba(255,255,255,0.15); background: rgba(57,169,0,0.2); color: #fff;">
+                    Todos (<span id="pill-count-todos">{{ $aprendices->count() }}</span>)
+                </button>
+                <button type="button" onclick="filtrarProgreso('pendientes')" id="btn-filtro-pendientes" class="btn" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; font-weight: 700; border-radius: 8px; border: 1px solid rgba(239,68,68,0.25); background: rgba(239,68,68,0.1); color: #ef4444;">
+                    ⚠️ Con Pendientes (<span id="pill-count-pendientes">0</span>)
+                </button>
+                <button type="button" onclick="filtrarProgreso('aprobados')" id="btn-filtro-aprobados" class="btn" style="padding: 0.35rem 0.75rem; font-size: 0.78rem; font-weight: 700; border-radius: 8px; border: 1px solid rgba(16,185,129,0.25); background: rgba(16,185,129,0.1); color: #10b981;">
+                    ✅ 100% Aprobados (<span id="pill-count-aprobados">0</span>)
+                </button>
+            </div>
+
+            <!-- Acciones y contador de aprendices visibles -->
+            <div style="display: flex; gap: 0.85rem; align-items: center;">
+                <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">
+                    Mostrando <strong id="contador-mostrando-matriz" style="color: #fff;">{{ $aprendices->count() }}</strong> de {{ $aprendices->count() }}
+                </span>
+                <button type="button" onclick="aprobarTodosLote()" class="btn" style="background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); font-weight: 800; font-size: 0.8rem; padding: 0.45rem 0.9rem; border-radius: 10px; cursor: pointer;">
+                    <i class="fa-solid fa-check-double"></i> Aprobar Visibles
                 </button>
             </div>
         </div>
 
         <!-- Matriz Hoja de Cálculo Web -->
         <div class="card" style="padding: 0; overflow-x: auto; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08); background: rgba(15,23,42,0.85);">
-            <table style="width: 100%; border-collapse: collapse; min-width: 900px;">
+            <table style="width: 100%; border-collapse: collapse; min-width: 900px;" id="tabla-matriz">
                 <thead>
                     <tr style="background: rgba(0,0,0,0.6); border-bottom: 2px solid rgba(255,255,255,0.1);">
                         <!-- Columna fija Nombres -->
@@ -103,7 +246,7 @@
                         </th>
                     </tr>
                 </thead>
-                <tbody>
+                <tbody id="tbody-matriz">
                     @foreach($aprendices as $ap)
                     @php
                         // Calcular aprobados en esta vista para la fila
@@ -115,8 +258,16 @@
                             }
                         }
                         $porcRow = $resultados->count() > 0 ? round(($aprobadosFila / $resultados->count()) * 100) : 0;
+                        $searchKeywords = strtolower("{$ap->Nombre} {$ap->Apellido} {$ap->Documento} {$ap->Tipo_Documento} {$ap->Estado}");
                     @endphp
-                    <tr style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
+                    <tr class="fila-matriz-aprendiz" 
+                        data-search="{{ $searchKeywords }}"
+                        data-porc="{{ $porcRow }}"
+                        data-aprobados="{{ $aprobadosFila }}"
+                        data-total="{{ $resultados->count() }}"
+                        data-estado="{{ $ap->Estado }}"
+                        data-aprendiz-id="{{ $ap->Id_Aprendiz }}"
+                        style="border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.02)'" onmouseout="this.style.background='transparent'">
                         <!-- Columna fija: Aprendiz -->
                         <td style="padding: 0.85rem 1.25rem; position: sticky; left: 0; background: #0f172a; z-index: 5; border-right: 1px solid rgba(255,255,255,0.08);">
                             <div style="font-weight: 800; color: #fff; font-size: 0.9rem;">
@@ -125,7 +276,7 @@
                                 </a>
                             </div>
                             <div style="font-size: 0.72rem; color: var(--text-muted); display: flex; justify-content: space-between; margin-top: 0.15rem;">
-                                <span>Doc: {{ $ap->Documento }}</span>
+                                <span>Doc: <strong style="color: #cbd5e1;">{{ $ap->Documento }}</strong> @if($ap->Tipo_Documento)<span style="opacity: 0.7;">({{ $ap->Tipo_Documento }})</span>@endif</span>
                                 <span class="badge {{ $ap->Estado == 'EN FORMACION' ? 'badge-success' : 'badge-warning' }}" style="font-size: 0.62rem; padding: 0.1rem 0.4rem;">{{ $ap->Estado }}</span>
                             </div>
                         </td>
@@ -170,6 +321,12 @@
                         </td>
                     </tr>
                     @endforeach
+                    <tr id="tr-matriz-no-match" style="display: none;">
+                        <td colspan="{{ $resultados->count() + 2 }}" style="padding: 3rem; text-align: center; color: var(--text-muted);">
+                            <i class="fa-solid fa-user-slash" style="font-size: 2rem; margin-bottom: 0.5rem; display: block; opacity: 0.5;"></i>
+                            No se encontraron aprendices que coincidan con la búsqueda en esta pantalla.
+                        </td>
+                    </tr>
                 </tbody>
             </table>
         </div>
@@ -177,10 +334,11 @@
 
 </div>
 
-<!-- Script AJAX de Autoguardado Reactivo -->
+<!-- Script AJAX de Autoguardado Reactivo y Filtros en Vivo -->
 <script>
     const csrfToken = "{{ csrf_token() }}";
     const updateUrl = "{{ route('acciones.matriz.actualizar') }}";
+    let filtroProgresoActivo = 'todos';
 
     function toggleJuicio(btn) {
         const aprendizId = btn.getAttribute('data-aprendiz');
@@ -243,6 +401,7 @@
 
     function actualizarProgresoFila(aprendizId, delta) {
         const td = document.getElementById(`row-progress-${aprendizId}`);
+        const tr = document.querySelector(`tr.fila-matriz-aprendiz[data-aprendiz-id="${aprendizId}"]`);
         if (!td) return;
 
         let aprobados = parseInt(td.getAttribute('data-aprobados')) + delta;
@@ -262,6 +421,13 @@
         if (countEl) {
             countEl.textContent = `${aprobados}/${total}`;
         }
+
+        if (tr) {
+            tr.setAttribute('data-porc', porc);
+            tr.setAttribute('data-aprobados', aprobados);
+        }
+
+        actualizarContadoresPills();
     }
 
     let toastTimeout = null;
@@ -286,10 +452,36 @@
         }, 2500);
     }
 
+    /* ── Modal de confirmación personalizado ── */
+    const _modalOverlay = document.getElementById('modal-confirmar-overlay');
+    const _modalBox     = document.getElementById('modal-confirmar-box');
+
+    function abrirModalConfirmar(onAceptar) {
+        if (!_modalOverlay || !_modalBox) return;
+        _modalOverlay.style.opacity        = '1';
+        _modalOverlay.style.pointerEvents  = 'all';
+        _modalBox.style.opacity            = '1';
+        _modalBox.style.transform          = 'scale(1) translateY(0)';
+
+        const cerrar = () => {
+            _modalOverlay.style.opacity       = '0';
+            _modalOverlay.style.pointerEvents = 'none';
+            _modalBox.style.opacity           = '0';
+            _modalBox.style.transform         = 'scale(0.88) translateY(16px)';
+        };
+
+        document.getElementById('modal-btn-cancelar').onclick = cerrar;
+        _modalOverlay.onclick = (e) => { if (e.target === _modalOverlay) cerrar(); };
+        document.getElementById('modal-btn-aceptar').onclick = () => { cerrar(); onAceptar(); };
+    }
+
     function aprobarTodosLote() {
-        if (!confirm('¿Deseas cambiar a APROBADO todas las celdas en pantalla para esta competencia?')) return;
-        
-        const botones = document.querySelectorAll('button[id^="btn-toggle-"]');
+        abrirModalConfirmar(() => { _ejecutarAprobacionLote(); });
+    }
+
+    function _ejecutarAprobacionLote() {
+        // Solo seleccionar botones de filas actualmente VISIBLES
+        const botones = document.querySelectorAll('tr.fila-matriz-aprendiz:not([style*="display: none"]) button[id^="btn-toggle-"]');
         let cambios = [];
 
         botones.forEach(btn => {
@@ -303,7 +495,7 @@
         });
 
         if (cambios.length === 0) {
-            mostrarToast('✅ Todos ya están aprobados');
+            mostrarToast('✅ Todos los visibles ya están aprobados');
             return;
         }
 
@@ -328,5 +520,112 @@
             mostrarToast('❌ Error de red al guardar en lote', true);
         });
     }
+
+    /* ── Filtrado Reactivo en Tiempo Real y Pastillas de Progreso ── */
+    function filtrarProgreso(tipo) {
+        filtroProgresoActivo = tipo;
+
+        const btnTodos = document.getElementById('btn-filtro-todos');
+        const btnPendientes = document.getElementById('btn-filtro-pendientes');
+        const btnAprobados = document.getElementById('btn-filtro-aprobados');
+
+        // Reset estilos
+        if (btnTodos) {
+            btnTodos.style.background = 'rgba(255,255,255,0.05)';
+            btnTodos.style.color = 'var(--text-muted)';
+        }
+        if (btnPendientes) {
+            btnPendientes.style.background = 'rgba(239,68,68,0.1)';
+            btnPendientes.style.color = '#ef4444';
+        }
+        if (btnAprobados) {
+            btnAprobados.style.background = 'rgba(16,185,129,0.1)';
+            btnAprobados.style.color = '#10b981';
+        }
+
+        // Activar estilo seleccionado
+        if (tipo === 'todos' && btnTodos) {
+            btnTodos.style.background = 'rgba(57,169,0,0.25)';
+            btnTodos.style.color = '#fff';
+        } else if (tipo === 'pendientes' && btnPendientes) {
+            btnPendientes.style.background = '#ef4444';
+            btnPendientes.style.color = '#fff';
+        } else if (tipo === 'aprobados' && btnAprobados) {
+            btnAprobados.style.background = '#10b981';
+            btnAprobados.style.color = '#fff';
+        }
+
+        aplicarFiltrosMatriz();
+    }
+
+    function aplicarFiltrosMatriz() {
+        const inputLive = document.getElementById('input-matriz-live-search');
+        const query = inputLive ? inputLive.value.trim().toLowerCase() : '';
+        const filas = document.querySelectorAll('tr.fila-matriz-aprendiz');
+        const noMatchTr = document.getElementById('tr-matriz-no-match');
+        let visibles = 0;
+
+        filas.forEach(fila => {
+            const searchData = fila.getAttribute('data-search') || '';
+            const porc = parseFloat(fila.getAttribute('data-porc') || 0);
+
+            let coincideTexto = (query === '' || searchData.includes(query));
+            let coincideProgreso = true;
+
+            if (filtroProgresoActivo === 'pendientes') {
+                coincideProgreso = (porc < 100);
+            } else if (filtroProgresoActivo === 'aprobados') {
+                coincideProgreso = (porc >= 100);
+            }
+
+            if (coincideTexto && coincideProgreso) {
+                fila.style.display = '';
+                visibles++;
+            } else {
+                fila.style.display = 'none';
+            }
+        });
+
+        if (noMatchTr) {
+            noMatchTr.style.display = (visibles === 0 && filas.length > 0) ? '' : 'none';
+        }
+
+        const spanMostrando = document.getElementById('contador-mostrando-matriz');
+        if (spanMostrando) {
+            spanMostrando.textContent = visibles;
+        }
+    }
+
+    function actualizarContadoresPills() {
+        const filas = document.querySelectorAll('tr.fila-matriz-aprendiz');
+        let total = filas.length;
+        let pendientes = 0;
+        let aprobados = 0;
+
+        filas.forEach(fila => {
+            const porc = parseFloat(fila.getAttribute('data-porc') || 0);
+            if (porc >= 100) {
+                aprobados++;
+            } else {
+                pendientes++;
+            }
+        });
+
+        const pillTodos = document.getElementById('pill-count-todos');
+        const pillPend = document.getElementById('pill-count-pendientes');
+        const pillAprob = document.getElementById('pill-count-aprobados');
+
+        if (pillTodos) pillTodos.textContent = total;
+        if (pillPend) pillPend.textContent = pendientes;
+        if (pillAprob) pillAprob.textContent = aprobados;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const inputLive = document.getElementById('input-matriz-live-search');
+        if (inputLive) {
+            inputLive.addEventListener('input', aplicarFiltrosMatriz);
+        }
+        actualizarContadoresPills();
+    });
 </script>
 @endsection
