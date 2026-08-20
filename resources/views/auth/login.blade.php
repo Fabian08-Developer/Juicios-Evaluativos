@@ -57,9 +57,8 @@
             position: absolute;
             inset: 0;
             background:
-                linear-gradient(180deg, rgba(6,13,20,0.85) 0%, rgba(6,13,20,0.45) 25%, transparent 50%),
-                linear-gradient(0deg, rgba(6,13,20,0.98) 0%, rgba(6,13,20,0.65) 35%, rgba(6,13,20,0.2) 65%, transparent 100%),
-                linear-gradient(90deg, rgba(6,13,20,0.35) 0%, transparent 100%);
+                linear-gradient(to right, rgba(6,13,20,0.15) 0%, rgba(6,13,20,0.0) 100%),
+                linear-gradient(to top, rgba(6,13,20,0.95) 0%, rgba(6,13,20,0.5) 30%, rgba(6,13,20,0.1) 60%, transparent 100%);
         }
 
         /* Contenido sobre la imagen */
@@ -71,53 +70,38 @@
 
         .sena-logo-left {
             position: absolute;
-            top: 2.25rem;
-            left: 2.75rem;
+            top: 2.5rem;
+            left: 3rem;
             z-index: 3;
             display: flex;
             align-items: center;
-            gap: 0.9rem;
-            background: rgba(6, 13, 20, 0.78);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            padding: 0.65rem 1.35rem 0.65rem 0.75rem;
-            border-radius: 18px;
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            box-shadow: 0 12px 30px -4px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05);
+            gap: 0.85rem;
             animation: fadeIn 0.8s ease both;
-            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-        }
-        .sena-logo-left:hover {
-            background: rgba(6, 13, 20, 0.9);
-            border-color: rgba(57, 169, 0, 0.4);
-            box-shadow: 0 16px 36px -4px rgba(0, 0, 0, 0.75), 0 0 20px rgba(57, 169, 0, 0.25);
-            transform: translateY(-2px);
         }
         .sena-icon-wrap {
             width: 48px; height: 48px;
             background: linear-gradient(135deg, var(--primary), var(--primary-dark));
-            border-radius: 13px;
+            border-radius: 14px;
             display: flex; align-items: center; justify-content: center;
-            box-shadow: 0 6px 18px rgba(57, 169, 0, 0.45);
+            box-shadow: 0 8px 24px var(--primary-glow);
             flex-shrink: 0;
-            border: 1px solid rgba(255, 255, 255, 0.2);
         }
         .sena-icon-wrap i { font-size: 1.35rem; color: #fff; }
         .sena-logo-text {
-            font-size: 1.3rem;
+            font-size: 1.45rem;
             font-weight: 900;
             color: #ffffff;
-            letter-spacing: 0.04em;
+            letter-spacing: 0.02em;
             line-height: 1.1;
-            text-shadow: 0 2px 10px rgba(0,0,0,0.6);
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8), 0 1px 3px rgba(0, 0, 0, 0.9);
         }
         .sena-logo-sub {
-            font-size: 0.76rem;
+            font-size: 0.85rem;
             font-weight: 700;
-            color: #f1f5f9;
+            color: #ffffff;
             letter-spacing: 0.02em;
             margin-top: 0.15rem;
-            text-shadow: 0 1px 6px rgba(0,0,0,0.6);
+            text-shadow: 0 2px 10px rgba(0, 0, 0, 0.8), 0 1px 3px rgba(0, 0, 0, 0.9);
         }
 
         /* Citas rotativas */
