@@ -143,50 +143,32 @@ class ImportacionTest extends TestCase
         $this->assertSame('con_advertencias', DB::table('importaciones')->value('estado'));
     }
 
-    public function test_la_aprobacion_local_no_se_borra_pero_la_oficial_prevalece(): void
-    {
-        $this->importar([
-            $this->fila(['doc' => '1000000001', 'rap' => '593147 - 01 UNO']),
-            $this->fila(['doc' => '1000000001', 'rap' => '593148 - 02 DOS']),
-        ]);
-
-        $ap = Aprendiz::first();
-        $r1 = Resultado::where('Codigo', '593147')->first();
-        $r2 = Resultado::where('Codigo', '593148')->first();
-
-        // El instructor aprueba ambos en la matriz.
-        foreach ([$r1, $r2] as $r) {
-            $this->actingAs($this->user)->postJson(route('acciones.matriz.actualizar'), [
-                'id_aprendiz' => $ap->Id_Aprendiz, 'id_resultado' => $r->Id_Resultado, 'estado' => 1,
-            ])->assertOk();
-        }
-        $this->assertSame($this->user->id, JuicioEvaluativo::first()->registrado_por);
-
-        // Sofia Plus aún dice POR EVALUAR en el 1.º y ya trae APROBADO en el 2.º.
-        $respuesta = $this->importar([
-            $this->fila(['doc' => '1000000001', 'rap' => '593147 - 01 UNO', 'juicio' => 'POR EVALUAR']),
-            $this->fila(['doc' => '1000000001', 'rap' => '593148 - 02 DOS', 'juicio' => 'APROBADO', 'fecha' => '05/02/2026 8.00 am', 'func' => 'CC 1234567890 - JUAN GOMEZ']),
-        ]);
-
-        $respuesta->assertSessionHas('warning');
-        $this->assertStringContainsString('aprobados manualmente', session('warning'));
-
-        $j1 = JuicioEvaluativo::where('Id_Resultado', $r1->Id_Resultado)->first();
-        $j2 = JuicioEvaluativo::where('Id_Resultado', $r2->Id_Resultado)->first();
-        $this->assertSame(1, (int) $j1->Estado, 'la aprobación local se conserva');
-        $this->assertNotNull($j1->registrado_por);
-        $this->assertSame(1, (int) $j2->Estado);
-        $this->assertNull($j2->registrado_por, 'el dato oficial reemplaza al local');
-        $this->assertNotNull($j2->Id_Funcionario);
-    }
-
-    public function test_un_juicio_aprobado_oficialmente_si_vuelve_a_pendiente_cuando_el_excel_lo_dice(): void
+    public function test_sofia_plus_es_la_unica_fuente_el_reporte_manda(): void
     {
         $aprobado = $this->fila(['juicio' => 'APROBADO', 'fecha' => '04/02/2026 10.15 am', 'func' => 'CC 1234567890 - JUAN GOMEZ']);
         $this->importar([$aprobado]);
+        $this->assertSame(1, (int) JuicioEvaluativo::first()->Estado);
+
         $this->importar([$this->fila(['juicio' => 'POR EVALUAR'])]);
 
-        $this->assertSame(0, (int) JuicioEvaluativo::first()->Estado, 'no era una edición local: el Excel manda');
+        $juicio = JuicioEvaluativo::first();
+        $this->assertSame(0, (int) $juicio->Estado, 'el Excel más reciente reemplaza al anterior');
+        $this->assertNull($juicio->Id_Funcionario);
+        $this->assertNull($juicio->Fecha);
+    }
+
+    public function test_al_importar_se_limpian_marcas_de_calificacion_manual_antigua(): void
+    {
+        // Filas dejadas por la antigua matriz de calificación (módulo ya retirado).
+        $this->importar([$this->fila(['juicio' => 'POR EVALUAR'])]);
+        $user = User::factory()->create();
+        JuicioEvaluativo::query()->update(['Estado' => 1, 'registrado_por' => $user->id]);
+
+        $this->importar([$this->fila(['juicio' => 'POR EVALUAR'])]);
+
+        $juicio = JuicioEvaluativo::first();
+        $this->assertSame(0, (int) $juicio->Estado, 'la aprobación manual antigua ya no se conserva');
+        $this->assertNull($juicio->registrado_por);
     }
 
     public function test_un_aprendiz_que_aparece_en_otra_ficha_se_mueve_y_se_avisa(): void

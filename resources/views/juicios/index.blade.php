@@ -41,8 +41,6 @@
                     <td style="padding: 1rem 0; font-size: 0.85rem; color: var(--text-muted);">
                         @if($juicio->funcionario)
                             {{ $juicio->funcionario->Nombre }} {{ $juicio->funcionario->Apellido }}
-                        @elseif($juicio->registrador)
-                            {{ $juicio->registrador->name }} <span style="opacity:.6">(calificado en el sistema)</span>
                         @else
                             —
                         @endif

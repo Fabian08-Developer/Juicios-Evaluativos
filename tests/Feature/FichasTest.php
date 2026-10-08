@@ -6,7 +6,7 @@ use App\Models\Aprendiz;
 use App\Models\Ficha;
 use App\Models\JuicioEvaluativo;
 use App\Models\Programa;
-use App\Models\Remision;
+use Illuminate\Support\Facades\DB;
 use App\Models\Resultado;
 use App\Models\Competencia;
 use App\Models\User;
@@ -110,18 +110,22 @@ class FichasTest extends TestCase
         $this->assertFalse(Cache::has('dashboard.stats.ficha.2828282'));
     }
 
-    public function test_no_se_puede_eliminar_una_ficha_con_remisiones_a_bienestar(): void
+    public function test_eliminar_una_ficha_con_remisiones_historicas_no_falla(): void
     {
+        // El módulo de remisiones se retiró, pero la tabla (con datos antiguos) sigue en la BD.
         $f = $this->ficha();
         $ap = $this->aprendizConJuicio($f);
-        Remision::create(['Id_Aprendiz' => $ap->Id_Aprendiz, 'Id_Ficha' => $f->Id_Ficha, 'score_riesgo' => 85, 'nivel_semaforo' => 'CRITICO',
-            'total_pendientes' => 1, 'estado_remision' => 'PENDIENTE', 'radicado' => 'REM-2026-0001', 'motivo' => 'x']);
+        DB::table('remisiones')->insert([
+            'Id_Aprendiz' => $ap->Id_Aprendiz, 'Id_Ficha' => $f->Id_Ficha, 'score_riesgo' => 85, 'nivel_semaforo' => 'CRITICO',
+            'total_pendientes' => 1, 'estado_remision' => 'PENDIENTE', 'radicado' => 'REM-2026-0001', 'motivo' => 'x',
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
 
         $this->actingAs($this->user)->delete(route('fichas.destroy', $f->Id_Ficha))
-            ->assertRedirect(route('fichas.index'))->assertSessionHas('error');
+            ->assertRedirect(route('fichas.index'))->assertSessionHas('success');
 
-        $this->assertNotNull(Ficha::find($f->Id_Ficha));
-        $this->assertSame(1, Remision::count(), 'el registro formal ante Bienestar se conserva');
-        $this->assertSame(1, Aprendiz::count());
+        $this->assertNull(Ficha::find($f->Id_Ficha));
+        $this->assertSame(0, Aprendiz::count());
+        $this->assertSame(0, DB::table('remisiones')->count(), 'las remisiones del aprendiz se van con él (cascada de la BD)');
     }
 }

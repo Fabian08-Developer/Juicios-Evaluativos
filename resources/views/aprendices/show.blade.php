@@ -21,9 +21,6 @@
         </a>
     </div>
     <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <a href="{{ route('acciones.simulador', $aprendiz->Id_Aprendiz) }}" class="btn btn-primary" style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); font-weight: 800; box-shadow: 0 8px 20px -4px var(--primary-glow);">
-            <i class="fa-solid fa-wand-magic-sparkles"></i> Simular Plan de Salvación
-        </a>
         <a href="{{ route('aprendices.pdf', $aprendiz->Id_Aprendiz) }}" class="btn" style="background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); font-weight: 800;">
             <i class="fa-solid fa-file-pdf"></i> Expediente PDF
         </a>

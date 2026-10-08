@@ -113,10 +113,10 @@ class SeguridadTest extends TestCase
 
     public function test_las_rutas_protegidas_redirigen_a_los_invitados(): void
     {
-        foreach (['/', '/aprendices', '/fichas', '/remisiones', '/api/dashboard-stats', '/aprendices/buscar?q=ab', '/juicios'] as $url) {
+        foreach (['/', '/aprendices', '/fichas', '/importaciones', '/api/dashboard-stats', '/aprendices/buscar?q=ab', '/juicios'] as $url) {
             $this->get($url)->assertRedirect('/login');
         }
-        foreach (['/fichas', '/aprendices/importar', '/acciones/matriz-evaluacion/actualizar'] as $url) {
+        foreach (['/fichas', '/aprendices/importar'] as $url) {
             $this->post($url)->assertRedirect('/login');
         }
     }

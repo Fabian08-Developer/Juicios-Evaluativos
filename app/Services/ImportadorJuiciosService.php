@@ -47,7 +47,6 @@ class ImportadorJuiciosService
     /** @var array<string,int|string> aprendices que ya estaban en otra ficha: documento => ficha anterior */
     private array $aprendicesMovidos = [];
     private int $juiciosProcesados = 0;
-    private int $aprobacionesLocalesConservadas = 0;
 
     /**
      * @param  array<int,array<int,mixed>>  $filas  Filas de la hoja (Excel::toArray)
@@ -93,9 +92,7 @@ class ImportadorJuiciosService
         }
 
         // ── 2. Escribir: transacción externa + savepoint por fila ─────────────
-        $conservarLocales = (bool) config('sena.importacion.conservar_aprobados_locales', true);
-
-        $aprendicesProcesados = DB::transaction(function () use ($reporte, $numeroFicha, $conservarLocales) {
+        $aprendicesProcesados = DB::transaction(function () use ($reporte, $numeroFicha) {
             $ficha = $this->asegurarFichaYPrograma($reporte, $numeroFicha);
             $aprendicesOk = [];
 
@@ -104,7 +101,7 @@ class ImportadorJuiciosService
 
                 try {
                     // Transacción anidada => SAVEPOINT: si falla, solo se revierte esta fila.
-                    DB::transaction(fn () => $this->procesarRegistro($registro, $ficha, $conservarLocales));
+                    DB::transaction(fn () => $this->procesarRegistro($registro, $ficha));
 
                     $this->juiciosProcesados++;
                     $aprendicesOk[$registro['documento']] = true;
@@ -182,7 +179,7 @@ class ImportadorJuiciosService
     }
 
     /** @param  array<string,mixed>  $r  Registro normalizado de ReporteSofiaPlus */
-    private function procesarRegistro(array $r, Ficha $ficha, bool $conservarLocales): void
+    private function procesarRegistro(array $r, Ficha $ficha): void
     {
         $aprendiz = $this->resolverAprendiz($r, $ficha);
         $resultadoId = $this->resolverResultado($r);
@@ -192,14 +189,9 @@ class ImportadorJuiciosService
         $juicio = $this->juiciosDe($aprendiz)->get($resultadoId);
 
         if ($juicio) {
-            // Una aprobación hecha a mano en la matriz no se borra porque el
-            // Excel (aún) diga "POR EVALUAR". Si el Excel ya la trae aprobada,
-            // el dato oficial prevalece.
-            if ($conservarLocales && $estado === 0 && (int) $juicio->Estado === 1 && $juicio->registrado_por !== null) {
-                $this->aprobacionesLocalesConservadas++;
-                return;
-            }
-
+            // Sofia Plus es la única fuente de los juicios: el reporte manda.
+            // (registrado_por => null limpia marcas de la antigua calificación
+            // manual, que ya no existe en el sistema.)
             $juicio->fill([
                 'Estado'         => $estado,
                 'Id_Funcionario' => $funcionarioId,
@@ -312,9 +304,6 @@ class ImportadorJuiciosService
                 . '(sus juicios anteriores se conservan): documentos ' . implode(', ', array_slice(array_keys($this->aprendicesMovidos), 0, 10))
                 . (count($this->aprendicesMovidos) > 10 ? ', …' : '') . '.';
         }
-        if ($this->aprobacionesLocalesConservadas) {
-            $a[] = "{$this->aprobacionesLocalesConservadas} juicio(s) aprobados manualmente en la matriz se conservaron aunque el Excel aún los muestra «POR EVALUAR».";
-        }
         if ($reporte->juiciosDesconocidos) {
             $a[] = 'Valores de juicio no reconocidos (se tomaron como pendientes): '
                 . collect($reporte->juiciosDesconocidos)->map(fn ($n, $v) => "{$v} ({$n})")->implode(', ') . '.';
@@ -381,6 +370,6 @@ class ImportadorJuiciosService
         $this->cacheCompetencias = $this->cacheResultados = $this->cacheFuncionarios = [];
         $this->cacheAprendices = $this->cacheJuicios = [];
         $this->errores = $this->aprendicesMovidos = [];
-        $this->juiciosProcesados = $this->aprobacionesLocalesConservadas = 0;
+        $this->juiciosProcesados = 0;
     }
 }

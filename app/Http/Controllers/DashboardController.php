@@ -157,7 +157,7 @@ class DashboardController extends Controller
 
     public function juiciosList()
     {
-        $juicios = JuicioEvaluativo::with(['aprendiz', 'resultado.competencia', 'funcionario', 'registrador'])
+        $juicios = JuicioEvaluativo::with(['aprendiz', 'resultado.competencia', 'funcionario'])
             ->latest('Id_Juicio')
             ->paginate(20);
         return view('juicios.index', compact('juicios'));
