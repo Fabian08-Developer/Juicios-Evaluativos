@@ -58,6 +58,13 @@ El sistema permite importar los reportes de juicios evaluativos exportados de So
 - Sofia Plus es la única fuente de los juicios: cada reporte nuevo reemplaza el estado anterior de la ficha.
 - Reporte detallado de juicios importados, aprendices, filas omitidas y advertencias; historial completo en *Historial de importaciones*.
 
+### 🕒 Historial entre Reportes
+- Cada vez que subes un reporte, el sistema compara con la **carga anterior de la ficha** y te lleva directo a **«qué cambió»**: nuevos aprobados (quién avanzó y en qué RAP), aprobaciones revertidas, cambios de estado (p. ej. retiros), aprendices nuevos, ausentes o movidos de ficha.
+- **Aviso de reporte más antiguo**: si un reporte revierte aprobaciones (por ejemplo, subiste uno viejo por error), se advierte y se listan los juicios afectados.
+- **Línea de tiempo de la ficha** (`Fichas → Historial`): gráfico de juicios aprobados vs. por evaluar de los aprendices en formación tras cada carga, con el detalle de cada una.
+- **Historial de avance del aprendiz** en su expediente.
+- Queda registrado **quién subió** cada reporte. La primera carga de una ficha es la «carga inicial» (no hay contra qué comparar).
+
 ### 🔐 Sistema de Autenticación
 - Login seguro con diseño **split-screen glassmorphism** y foto institucional del campus SENA.
 - Citas rotativas institucionales con animación.
@@ -94,7 +101,8 @@ programa            → Programas de formación SENA
 competencia         → Competencias por programa
 resultados          → Resultados de aprendizaje por competencia
 juicios_evaluativos → Calificaciones (APROBADO / PENDIENTE / etc.)
-importaciones       → Historial de cargas masivas
+importaciones       → Historial de cargas masivas (quién subió y foto de la ficha tras cada carga)
+importacion_cambios → Qué cambió en cada carga frente a la anterior
 remisiones          → (histórica, sin uso: el módulo de remisiones se retiró)
 users               → Usuarios administradores del sistema
 ```

@@ -41,6 +41,9 @@
                     </td>
                     <td style="padding: 1.25rem 1rem; text-align: right; border-radius: 0 12px 12px 0;">
                         <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
+                            <a href="{{ route('fichas.historial', $ficha->Id_Ficha) }}" class="btn btn-outline" style="padding: 0.5rem; width: 35px; height: 35px; display: flex; align-items: center; justify-content: center;" title="Línea de tiempo">
+                                <i class="fa-solid fa-chart-line"></i>
+                            </a>
                             <a href="{{ route('fichas.edit', $ficha->Id_Ficha) }}" class="btn btn-outline" style="padding: 0.5rem; width: 35px; height: 35px; display: flex; align-items: center; justify-content: center;" title="Editar">
                                 <i class="fa-solid fa-pen-to-square"></i>
                             </a>

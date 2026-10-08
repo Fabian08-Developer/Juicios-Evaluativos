@@ -9,6 +9,7 @@ use App\Services\ImportadorJuiciosService;
 use App\Models\Aprendiz;
 use App\Models\Ficha;
 use App\Models\Importacion;
+use App\Models\ImportacionCambio;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
@@ -108,6 +109,7 @@ class AprendizController extends Controller
         $importacion = Importacion::create([
             'nombre_archivo'    => $nombreArchivo,
             'id_ficha'          => $request->Id_Ficha,
+            'user_id'           => $request->user()->id,
             'duracion_segundos' => 0,
             'estado'            => 'procesando',
         ]);
@@ -125,15 +127,17 @@ class AprendizController extends Controller
                     ->with('error', 'El documento no contiene registros válidos de aprendices para procesar. Verifica que sea el reporte de juicios evaluativos de la ficha.');
             }
 
+            // Tras importar se aterriza en «qué cambió» frente a la carga anterior.
+            $destino = redirect()->route('importaciones.show', $importacion);
+
             if (! empty($resultado['errores'])) {
-                return redirect()->route('dashboard')
+                return $destino
                     ->with('warning', $resultado['message'])
                     ->with('warning_errores', $resultado['errores']);
             }
 
-            // Advertencias sin errores de fila (p. ej. aprendices movidos de ficha): se muestran como aviso.
-            return redirect()->route('dashboard')
-                ->with($resultado['advertencias'] ? 'warning' : 'success', $resultado['message']);
+            // Advertencias sin errores de fila (p. ej. reporte más antiguo): se muestran como aviso.
+            return $destino->with($resultado['advertencias'] ? 'warning' : 'success', $resultado['message']);
 
         } catch (\Throwable $e) {
             Log::error('Error fatal en importación: ' . $e->getMessage());
@@ -174,7 +178,14 @@ class AprendizController extends Controller
             ];
         });
 
-        return view('aprendices.show', compact('aprendiz', 'avancePorCompetencia'));
+        // Línea de tiempo del aprendiz: sus cambios en cada importación (más reciente primero).
+        $historial = ImportacionCambio::with(['importacion', 'resultado'])
+            ->where('Id_Aprendiz', $aprendiz->Id_Aprendiz)
+            ->get()
+            ->groupBy('importacion_id')
+            ->sortKeysDesc();
+
+        return view('aprendices.show', compact('aprendiz', 'avancePorCompetencia', 'historial'));
     }
 
     /**

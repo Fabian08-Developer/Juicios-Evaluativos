@@ -33,11 +33,13 @@ Route::middleware('auth')->group(function () {
 
     // Rutas para Fichas
     Route::resource('fichas', FichaController::class)->except('show');
+    Route::get('/fichas/{ficha}/historial', [ImportacionController::class, 'ficha'])->name('fichas.historial');
 
     // Rutas para Juicios
     Route::get('/juicios', [DashboardController::class, 'juiciosList'])->name('juicios.index');
 
     // Historial de importaciones
     Route::get('/importaciones', [ImportacionController::class, 'index'])->name('importaciones.index');
+    Route::get('/importaciones/{importacion}', [ImportacionController::class, 'show'])->name('importaciones.show');
 
 });
