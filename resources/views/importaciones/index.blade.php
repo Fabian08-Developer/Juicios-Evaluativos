@@ -62,9 +62,9 @@
         <div style="position: relative; margin-bottom: 1.5rem; animation: fadeInLeft 0.5s ease {{ $loop->index * 0.1 }}s both;">
             <!-- Punto en la línea -->
             <div style="position: absolute; left: -25px; top: 6px; width: 12px; height: 12px; border-radius: 50%;
-                        background: {{ $imp->estado === 'exitoso' ? 'var(--primary)' : '#ef4444' }};
-                        border: 2px solid {{ $imp->estado === 'exitoso' ? 'rgba(57,169,0,0.3)' : 'rgba(239,68,68,0.3)' }};
-                        box-shadow: 0 0 8px {{ $imp->estado === 'exitoso' ? 'var(--primary-glow)' : 'rgba(239,68,68,0.4)' }};"></div>
+                        background: {{ $imp->estado_visual['dot_bg'] }};
+                        border: 2px solid {{ $imp->estado_visual['dot_border'] }};
+                        box-shadow: 0 0 8px {{ $imp->estado_visual['dot_glow'] }};"></div>
 
             <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 16px; padding: 1.25rem 1.5rem; transition: all 0.3s;"
                  onmouseover="this.style.borderColor='rgba(57,169,0,0.3)'; this.style.background='rgba(57,169,0,0.03)'"
@@ -88,10 +88,10 @@
                     </div>
                     <div style="text-align: right; min-width: 150px;">
                         <span style="display: inline-block; padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.7rem; font-weight: 700;
-                                     background: {{ $imp->estado === 'exitoso' ? 'rgba(57,169,0,0.1)' : 'rgba(239,68,68,0.1)' }};
-                                     color: {{ $imp->estado === 'exitoso' ? 'var(--primary)' : '#fca5a5' }};
-                                     border: 1px solid {{ $imp->estado === 'exitoso' ? 'rgba(57,169,0,0.2)' : 'rgba(239,68,68,0.2)' }};">
-                            {{ $imp->estado === 'exitoso' ? '✓ Exitoso' : '✗ Error' }}
+                                     background: {{ $imp->estado_visual['badge_bg'] }};
+                                     color: {{ $imp->estado_visual['badge_color'] }};
+                                     border: 1px solid {{ $imp->estado_visual['badge_border'] }};">
+                            {{ $imp->estado_visual['label'] }}
                         </span>
                         <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.5rem;">
                             {{ $imp->created_at->format('d/m/Y H:i') }}
@@ -156,10 +156,10 @@
                     </td>
                     <td style="padding: 1rem;">
                         <span style="padding: 0.3rem 0.75rem; border-radius: 20px; font-size: 0.7rem; font-weight: 700;
-                                     background: {{ $imp->estado === 'exitoso' ? 'rgba(57,169,0,0.1)' : 'rgba(239,68,68,0.1)' }};
-                                     color: {{ $imp->estado === 'exitoso' ? 'var(--primary)' : '#fca5a5' }};
-                                     border: 1px solid {{ $imp->estado === 'exitoso' ? 'rgba(57,169,0,0.2)' : 'rgba(239,68,68,0.2)' }};">
-                            {{ $imp->estado === 'exitoso' ? '✓ Exitoso' : '✗ Error' }}
+                                     background: {{ $imp->estado_visual['badge_bg'] }};
+                                     color: {{ $imp->estado_visual['badge_color'] }};
+                                     border: 1px solid {{ $imp->estado_visual['badge_border'] }};">
+                            {{ $imp->estado_visual['label'] }}
                         </span>
                     </td>
                     <td style="padding: 1rem; border-radius: 0 12px 12px 0; color: var(--text-muted); font-size: 0.85rem;">

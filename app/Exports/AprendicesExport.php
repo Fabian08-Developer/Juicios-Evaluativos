@@ -29,12 +29,7 @@ class AprendicesExport implements FromQuery, WithHeadings, WithMapping, WithStyl
             $query->where('Id_Ficha', $this->filters['ficha']);
         }
         if (!empty($this->filters['search'])) {
-            $s = $this->filters['search'];
-            $query->where(function ($q) use ($s) {
-                $q->where('Nombre', 'like', "%$s%")
-                  ->orWhere('Apellido', 'like', "%$s%")
-                  ->orWhere('Documento', 'like', "%$s%");
-            });
+            $query->buscar($this->filters['search']);
         }
         if (!empty($this->filters['estado'])) {
             $query->where('Estado', $this->filters['estado']);
@@ -59,6 +54,12 @@ class AprendicesExport implements FromQuery, WithHeadings, WithMapping, WithStyl
                 break;
             case 'documento_desc':
                 $query->orderByRaw('CAST("Documento" AS BIGINT) DESC');
+                break;
+            case 'estado_asc':
+                $query->orderBy('Estado', 'asc');
+                break;
+            case 'recientes':
+                $query->latest();
                 break;
             default:
                 $query->orderBy('Nombre', 'asc')->orderBy('Apellido', 'asc');
