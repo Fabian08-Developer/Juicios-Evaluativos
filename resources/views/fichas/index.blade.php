@@ -45,7 +45,7 @@
                                 <i class="fa-solid fa-pen-to-square"></i>
                             </a>
                             <button type="button"
-                                    onclick="openDeleteModal('{{ $ficha->Id_Ficha }}', '{{ addslashes($ficha->programa->Nombre ?? 'Sin programa') }}', '{{ route('fichas.destroy', $ficha->Id_Ficha) }}')"
+                                    onclick="openDeleteModal(@js((string) $ficha->Id_Ficha), @js($ficha->programa->Nombre ?? 'Sin programa'), @js(route('fichas.destroy', $ficha->Id_Ficha)))"
                                     class="btn btn-outline"
                                     style="padding: 0.5rem; width: 35px; height: 35px; display: flex; align-items: center; justify-content: center; color: #fca5a5; transition: all 0.2s;"
                                     onmouseover="this.style.color='#ef4444'; this.style.borderColor='rgba(239,68,68,0.4)'; this.style.background='rgba(239,68,68,0.1)'"

@@ -548,18 +548,32 @@
     <!-- ======================== SCRIPTS ======================== -->
     <script>
         // ============ TOAST SYSTEM ============
+        // Escapa texto para insertarlo de forma segura dentro de HTML (innerHTML).
+        // Todo dato que venga de la base de datos o de un Excel DEBE pasar por aquí.
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            }[c]));
+        }
+
         function showToast(message, type = 'success', duration = 5000) {
             const container = document.getElementById('toast-container');
             const toast = document.createElement('div');
             const icon = type === 'success' ? 'fa-circle-check' : (type === 'warning' ? 'fa-triangle-exclamation' : 'fa-circle-exclamation');
             toast.className = `toast toast-${type}`;
-            toast.innerHTML = `
-                <i class="fa-solid ${icon} toast-icon"></i>
-                <span>${message}</span>
-                <button class="toast-close" onclick="removeToast(this.parentElement)">
-                    <i class="fa-solid fa-xmark"></i>
-                </button>
-            `;
+
+            const iconEl = document.createElement('i');
+            iconEl.className = `fa-solid ${icon} toast-icon`;
+
+            const textEl = document.createElement('span');
+            textEl.textContent = message; // texto plano: nunca se interpreta como HTML
+
+            const closeBtn = document.createElement('button');
+            closeBtn.className = 'toast-close';
+            closeBtn.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+            closeBtn.addEventListener('click', () => removeToast(toast));
+
+            toast.append(iconEl, textEl, closeBtn);
             container.appendChild(toast);
 
             const timer = setTimeout(() => removeToast(toast), duration);
@@ -618,7 +632,7 @@
 
         function renderSearchResults(items, q) {
             if (!items.length) {
-                searchResults.innerHTML = `<div class="search-no-results"><i class="fa-solid fa-user-slash" style="display:block;font-size:1.5rem;margin-bottom:0.5rem;opacity:0.3;"></i>Sin resultados para "<strong>${q}</strong>"</div>`;
+                searchResults.innerHTML = `<div class="search-no-results"><i class="fa-solid fa-user-slash" style="display:block;font-size:1.5rem;margin-bottom:0.5rem;opacity:0.3;"></i>Sin resultados para "<strong>${escapeHtml(q)}</strong>"</div>`;
                 searchResults.classList.add('open');
                 return;
             }
@@ -630,11 +644,11 @@
             };
 
             searchResults.innerHTML = items.map(item => `
-                <a href="${item.url}" class="search-result-item">
-                    <div class="search-avatar">${item.iniciales}</div>
+                <a href="${escapeHtml(item.url)}" class="search-result-item">
+                    <div class="search-avatar">${escapeHtml(item.iniciales)}</div>
                     <div style="flex:1; overflow:hidden;">
-                        <div style="font-weight:700; font-size:0.85rem; color:#f1f5f9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${item.nombre}</div>
-                        <div style="font-size:0.72rem; color:var(--text-muted);">Doc: ${item.doc} · Ficha ${item.ficha}</div>
+                        <div style="font-weight:700; font-size:0.85rem; color:#f1f5f9; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${escapeHtml(item.nombre)}</div>
+                        <div style="font-size:0.72rem; color:var(--text-muted);">Doc: ${escapeHtml(item.doc)} · Ficha ${escapeHtml(item.ficha)}</div>
                     </div>
                     <span style="font-size:0.65rem; font-weight:700; color:${estadoColors[item.estado] || '#94a3b8'}; flex-shrink:0;">●</span>
                 </a>

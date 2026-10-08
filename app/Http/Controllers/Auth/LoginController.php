@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 class LoginController extends Controller
 {
@@ -29,12 +31,32 @@ class LoginController extends Controller
             'password.required' => 'La contraseña es obligatoria.',
         ]);
 
-        $remember = $request->boolean('remember');
+        // ── Protección contra fuerza bruta ────────────────────────────────
+        // Dos contadores: por correo+IP (ataque dirigido a una cuenta) y por IP
+        // (ataque que va cambiando de correo).
+        $keyCorreo = 'login:' . Str::lower($credentials['email']) . '|' . $request->ip();
+        $keyIp     = 'login-ip:' . $request->ip();
+        $maxCorreo = (int) config('sena.login.max_intentos_por_correo');
+        $maxIp     = (int) config('sena.login.max_intentos_por_ip');
+        $bloqueo   = (int) config('sena.login.bloqueo_segundos');
 
-        if (Auth::attempt($credentials, $remember)) {
+        foreach ([[$keyCorreo, $maxCorreo], [$keyIp, $maxIp]] as [$key, $max]) {
+            if (RateLimiter::tooManyAttempts($key, $max)) {
+                $segundos = RateLimiter::availableIn($key);
+                return back()
+                    ->withInput($request->only('email'))
+                    ->withErrors(['email' => "Demasiados intentos fallidos. Intenta de nuevo en {$segundos} segundos."]);
+            }
+        }
+
+        if (Auth::attempt($credentials, $request->boolean('remember'))) {
+            RateLimiter::clear($keyCorreo);
             $request->session()->regenerate();
             return redirect()->intended(route('dashboard'));
         }
+
+        RateLimiter::hit($keyCorreo, $bloqueo);
+        RateLimiter::hit($keyIp, $bloqueo);
 
         return back()
             ->withInput($request->only('email'))
