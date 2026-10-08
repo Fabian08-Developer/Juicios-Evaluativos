@@ -2,93 +2,62 @@
 
 namespace App\Rules;
 
+use App\Support\FiltroPrimerasFilas;
+use App\Support\ReporteSofiaPlus;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 
 /**
- * MEJORA TÉCNICA #5 — Regla de Validación Personalizada
+ * Valida que el archivo sea el "Reporte de Juicios de Evaluación" de Sofia Plus
+ * ANTES de importarlo: debe traer la fila de encabezados con las columnas
+ * obligatorias (Número de Documento, Nombre, Competencia, Resultado de
+ * Aprendizaje, Juicio de Evaluación) y al menos una fila de datos.
  *
- * Problema: Cualquier archivo .xlsx se acepta sin verificar su contenido.
- * Un Excel de ventas pasaría la validación y fallaría a mitad de importación.
- *
- * Solución: Leer las primeras filas del Excel y verificar palabras clave
- * del formato SENA (FICHA, DOCUMENTO, NOMBRE) antes de comenzar la importación.
- *
- * Uso en Form Request:
- *   'archivo_excel' => ['required', 'mimes:xlsx,xls', new ExcelFormatoValido()]
+ * Las columnas se buscan por su texto, no por posición, y solo se leen las
+ * primeras filas del archivo (no se carga el libro completo).
  */
 class ExcelFormatoValido implements ValidationRule
 {
-    /** Máximo de filas a escanear para encontrar la cabecera */
-    private const MAX_FILAS_CABECERA = 20;
-
-    /** Palabras clave obligatorias que debe contener el reporte SENA */
-    private const PALABRAS_REQUERIDAS = ['FICHA', 'DOCUMENTO', 'NOMBRE'];
-
     public function validate(string $attribute, mixed $value, Closure $fail): void
     {
-        // Verificar que sea un objeto UploadedFile
-        if (!$value instanceof \Illuminate\Http\UploadedFile) {
+        if (! $value instanceof UploadedFile) {
             $fail('El archivo proporcionado no es válido.');
             return;
         }
 
         try {
-            // Cargar solo las primeras filas (sin cargar todo el archivo en memoria)
-            $reader = IOFactory::createReaderForFile($value->path());
+            $ruta   = $value->path();
+            $reader = IOFactory::createReaderForFile($ruta);
             $reader->setReadDataOnly(true);
 
-            // Leer solo la hoja activa
-            $spreadsheet = $reader->load($value->path());
-            $sheet       = $spreadsheet->getActiveSheet();
+            $info       = $reader->listWorksheetInfo($ruta);
+            $totalFilas = (int) ($info[0]['totalRows'] ?? 0);
 
-            // Extraer texto de las primeras N filas para análisis
-            $textoGlobal = '';
-            $maxFila     = min(self::MAX_FILAS_CABECERA, $sheet->getHighestRow());
+            $reader->setReadFilter(new FiltroPrimerasFilas(ReporteSofiaPlus::FILAS_CABECERA));
+            $hoja  = $reader->load($ruta)->getActiveSheet();
+            $filas = $hoja->toArray(null, true, false, false);
 
-            for ($fila = 1; $fila <= $maxFila; $fila++) {
-                for ($col = 'A'; $col <= 'L'; $col++) {
-                    $valor = trim((string) $sheet->getCell("{$col}{$fila}")->getValue());
-                    if (!empty($valor)) {
-                        $textoGlobal .= ' ' . strtoupper($valor);
-                    }
-                }
-            }
-
-            // Verificar que existan todas las palabras clave del formato SENA
-            $faltantes = [];
-            foreach (self::PALABRAS_REQUERIDAS as $palabra) {
-                if (!str_contains($textoGlobal, $palabra)) {
-                    $faltantes[] = $palabra;
-                }
-            }
-
-            if (!empty($faltantes)) {
+            $problemas = ReporteSofiaPlus::problemasDeCabecera($filas);
+            if ($problemas) {
                 $fail(
-                    'El documento subido no cumple con el formato requerido de Sofia Plus. ' .
-                    'No se encontraron las columnas/secciones obligatorias: [' . implode(', ', $faltantes) . ']. ' .
-                    'Por favor asegúrate de subir el reporte oficial de juicios evaluativos descargado de Sofia Plus.'
+                    'El documento no cumple con el formato del reporte de Sofia Plus. Falta: ' . implode('; ', $problemas) . '. ' .
+                    'Sube el «Reporte de Juicios de Evaluación» tal como se descarga de Sofia Plus.'
                 );
                 return;
             }
 
-            // Verificación adicional: debe haber al menos 14 filas (cabecera + datos)
-            if ($sheet->getHighestRow() < 14) {
-                $fail(
-                    'El documento está vacío o incompleto. ' .
-                    'Se requieren al menos 14 filas con encabezado institucional y registros de aprendices.'
-                );
+            // La cabecera está en las primeras filas; debe haber al menos un registro debajo.
+            $reporte = ReporteSofiaPlus::desdeFilas($filas);
+            if ($totalFilas <= $reporte->filaEncabezado + 1) {
+                $fail('El documento está vacío: no tiene filas de aprendices debajo de los encabezados.');
             }
-
-            // Liberar memoria
-            $spreadsheet->disconnectWorksheets();
-            unset($spreadsheet);
-
         } catch (\PhpOffice\PhpSpreadsheet\Reader\Exception $e) {
             $fail('El documento no pudo ser leído. Verifica que sea un archivo Excel válido (.xlsx, .xls) y que no esté dañado ni protegido con contraseña.');
         } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::warning("ExcelFormatoValido: error al prevalidar — " . $e->getMessage());
+            Log::warning('ExcelFormatoValido: error al prevalidar — ' . $e->getMessage());
             $fail('Ocurrió un problema al validar la estructura del documento: ' . $e->getMessage());
         }
     }

@@ -28,7 +28,8 @@
         
         <div style="margin-bottom: 1.5rem;">
             <label for="Id_Ficha" style="display: block; font-size: 0.75rem; font-weight: 700; color: var(--text-muted); margin-bottom: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">Número de Ficha</label>
-            <input type="number" name="Id_Ficha" id="Id_Ficha" class="form-control" value="{{ old('Id_Ficha', $ficha->Id_Ficha) }}" required>
+            <input type="number" id="Id_Ficha" class="form-control" value="{{ $ficha->Id_Ficha }}" readonly disabled title="El número de ficha no se puede modificar">
+            <p style="font-size:0.72rem;color:var(--text-muted);margin-top:0.5rem;">El número de ficha viene de Sofia Plus y no se puede cambiar.</p>
         </div>
 
         <div style="margin-bottom: 1.5rem;">

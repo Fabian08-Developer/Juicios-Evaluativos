@@ -124,20 +124,15 @@ class DashboardController extends Controller
         $stats['statsPorFicha']            = collect($stats['statsPorFicha']);
         $stats['aprobacionPorCompetencia'] = collect($stats['aprobacionPorCompetencia']);
 
-        $aprendices = Aprendiz::withCount(['juicios as pendientes' => fn ($q) => $q->where('Estado', 0)])
-            ->with(['ficha'])
-            ->when($fichaId, fn ($q) => $q->deFicha($fichaId))
-            ->get();
-
         // Detalle de aprendices en riesgo (máx 5 para el panel)
         $aprendicesRiesgoDetalle = Aprendiz::enRiesgo()
             ->with('ficha.programa')
             ->when($fichaId, fn ($q) => $q->deFicha($fichaId))
-            ->get()
-            ->take(5);
+            ->limit(5)
+            ->get();
 
         return view('dashboard', array_merge($stats, compact(
-            'aprendices', 'fichas', 'fichaId', 'aprendicesRiesgoDetalle'
+            'fichas', 'fichaId', 'aprendicesRiesgoDetalle'
         )));
     }
 
@@ -162,7 +157,9 @@ class DashboardController extends Controller
 
     public function juiciosList()
     {
-        $juicios = JuicioEvaluativo::with(['aprendiz', 'resultado', 'funcionario'])->paginate(20);
+        $juicios = JuicioEvaluativo::with(['aprendiz', 'resultado.competencia', 'funcionario', 'registrador'])
+            ->latest('Id_Juicio')
+            ->paginate(20);
         return view('juicios.index', compact('juicios'));
     }
 }

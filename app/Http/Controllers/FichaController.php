@@ -2,36 +2,41 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Aprendiz;
 use App\Models\Ficha;
 use App\Models\Programa;
-use App\Models\Competencia;
+use App\Models\Remision;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class FichaController extends Controller
 {
+    /** Jornadas de formación que ofrece el SENA. */
+    private const JORNADAS = ['DIURNA', 'NOCTURNA', 'MIXTA', 'MADRUGADA', 'FINES DE SEMANA'];
+
     public function index()
     {
-        $fichas = Ficha::with(['programa', 'competencia'])->paginate(15);
+        $fichas = Ficha::with('programa')->paginate(15);
         return view('fichas.index', compact('fichas'));
     }
 
     public function create()
     {
         $programas = Programa::all();
-        $competencias = Competencia::all();
-        return view('fichas.create', compact('programas', 'competencias'));
+        return view('fichas.create', compact('programas'));
     }
 
     public function store(Request $request)
     {
-        $request->validate([
-            'Id_Ficha' => 'required|integer|unique:ficha,Id_Ficha',
+        // Id_Ficha es integer en aprendiz.Id_Ficha: no puede superar 2147483647.
+        $data = $request->validate([
+            'Id_Ficha'    => 'required|integer|min:1|max:2147483647|unique:ficha,Id_Ficha',
             'Id_Programa' => 'required|exists:programa,Id_Programa',
+            'Jornada'     => 'nullable|string|in:' . implode(',', self::JORNADAS),
         ]);
 
-        $data = $request->all();
         $data['Jornada'] = $data['Jornada'] ?? 'DIURNA';
-        $data['Id_Competencia'] = $data['Id_Competencia'] ?? \App\Models\Competencia::first()->Id_Competencia ?? 1;
 
         Ficha::create($data);
 
@@ -42,40 +47,53 @@ class FichaController extends Controller
     {
         $ficha = Ficha::findOrFail($id);
         $programas = Programa::all();
-        $competencias = Competencia::all();
-        return view('fichas.edit', compact('ficha', 'programas', 'competencias'));
+        return view('fichas.edit', compact('ficha', 'programas'));
     }
 
     public function update(Request $request, $id)
     {
         $ficha = Ficha::findOrFail($id);
-        
-        $request->validate([
-            'Id_Ficha' => 'required|integer|unique:ficha,Id_Ficha,' . $id . ',Id_Ficha',
+
+        // El número de ficha es la llave primaria y viene de Sofia Plus: no se edita
+        // (aprendices, remisiones e importaciones dependen de él).
+        $data = $request->validate([
             'Id_Programa' => 'required|exists:programa,Id_Programa',
+            'Jornada'     => 'nullable|string|in:' . implode(',', self::JORNADAS),
         ]);
 
-        $ficha->update($request->only(['Id_Ficha', 'Id_Programa']));
+        $ficha->update(array_filter($data, fn ($v) => $v !== null));
 
         return redirect()->route('fichas.index')->with('success', 'Ficha actualizada correctamente.');
     }
 
-   public function destroy($id)
-{
-    $ficha = Ficha::findOrFail($id);
+    public function destroy($id)
+    {
+        $ficha = Ficha::findOrFail($id);
 
-    foreach ($ficha->aprendices as $aprendiz) {
-        // eliminar juicios primero
-        $aprendiz->juicios()->delete();
+        // Las remisiones a Bienestar son registros formales (radicados): borrar los
+        // aprendices las eliminaría en cascada. Se protege en lugar de perderlas.
+        $remisiones = Remision::where('Id_Ficha', $ficha->Id_Ficha)->count();
+        if ($remisiones > 0) {
+            return redirect()->route('fichas.index')->with(
+                'error',
+                "No se puede eliminar la ficha {$ficha->Id_Ficha}: tiene {$remisiones} remisión(es) a Bienestar registradas que se perderían. " .
+                'Cierra esos casos (estado «Cerrado») y conserva la ficha como histórico.'
+            );
+        }
 
-        // luego aprendiz
-        $aprendiz->delete();
+        // Todo o nada: si algo falla a mitad, no queda la ficha a medio borrar.
+        DB::transaction(function () use ($ficha) {
+            $aprendizIds = Aprendiz::where('Id_Ficha', $ficha->Id_Ficha)->pluck('Id_Aprendiz');
+
+            DB::table('juicios_evaluativos')->whereIn('Id_Aprendiz', $aprendizIds)->delete();
+            Aprendiz::whereIn('Id_Aprendiz', $aprendizIds)->delete();
+            $ficha->delete();
+        });
+
+        Cache::forget("dashboard.stats.ficha.{$ficha->Id_Ficha}");
+        Cache::forget('dashboard.stats.global');
+
+        return redirect()->route('fichas.index')
+            ->with('success', 'Ficha eliminada correctamente.');
     }
-
-    // por último ficha
-    $ficha->delete();
-
-    return redirect()->route('fichas.index')
-        ->with('success', 'Ficha eliminada correctamente.');
-}
 }

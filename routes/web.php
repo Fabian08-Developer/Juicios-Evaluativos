@@ -6,7 +6,6 @@ use App\Http\Controllers\AprendizController;
 use App\Http\Controllers\FichaController;
 use App\Http\Controllers\ImportacionController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\JuiciosController;
 use App\Http\Controllers\InnovacionAcademicaController;
 
 // ── AUTENTICACIÓN ─────────────────────────────────────────────────────────────
@@ -34,7 +33,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/aprendices/{id}/pdf', [AprendizController::class, 'exportarPdf'])->name('aprendices.pdf');
 
     // Rutas para Fichas
-    Route::resource('fichas', FichaController::class);
+    Route::resource('fichas', FichaController::class)->except('show');
 
     // Rutas para Juicios
     Route::get('/juicios', [DashboardController::class, 'juiciosList'])->name('juicios.index');

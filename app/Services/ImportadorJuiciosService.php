@@ -3,290 +3,384 @@
 namespace App\Services;
 
 use App\Events\ImportacionProcesada;
-use App\Models\Ficha;
-use App\Models\Programa;
 use App\Models\Aprendiz;
 use App\Models\Competencia;
-use App\Models\Resultado;
+use App\Models\Ficha;
 use App\Models\Funcionario;
 use App\Models\Importacion;
 use App\Models\JuicioEvaluativo;
+use App\Models\Programa;
+use App\Models\Resultado;
+use App\Support\ReporteSofiaPlus;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * MEJORA TÉCNICA #8 — Tolerancia a fallos por fila
+ * Importa el "Reporte de Juicios de Evaluación" de Sofia Plus.
  *
- * Problema anterior: Un error en la fila 50 hacía rollback() de TODAS las filas
- * previas — si 3 de 200 filas estaban corruptas, se perdían las 197 válidas.
- *
- * Solución: Procesar cada fila en su propio try/catch, acumular errores,
- * y al final hacer commit() de todo lo que sí funcionó.
- *
- * El reporte de errores se devuelve al controlador para mostrarlo al usuario.
- *
- * MEJORA TÉCNICA #7 — Disparo de Evento al finalizar
- * Al terminar, se dispara ImportacionProcesada que notifica a los Listeners
- * sin que este servicio sepa qué hacen con esa información (OCP).
+ * Diseño:
+ *  - La interpretación del archivo (columnas por encabezado, fechas, funcionario,
+ *    etc.) está en App\Support\ReporteSofiaPlus; este servicio solo escribe.
+ *  - Todo el archivo se importa en UNA transacción externa, y cada fila en un
+ *    SAVEPOINT propio. Así un error de SQL en una fila revierte solo esa fila.
+ *    (Sin savepoint, en PostgreSQL un error aborta la transacción completa: las
+ *    filas siguientes fallaban y el COMMIT final descartaba TODO, aunque la
+ *    pantalla informara que se habían procesado.)
+ *  - Una importación sin ningún registro válido no escribe nada en la base.
  */
 class ImportadorJuiciosService
 {
-    /** Resultado de la última ejecución para acceso externo */
-    public array $erroresPorFila = [];
-    public int   $procesados     = 0;
+    /** @var array<string,int> código => Id_Competencia */
+    private array $cacheCompetencias = [];
+    /** @var array<string,int> código => Id_Resultado */
+    private array $cacheResultados = [];
+    /** @var array<string,int|null> documento => Id_Funcionario */
+    private array $cacheFuncionarios = [];
+    /** @var array<string,Aprendiz> documento => modelo */
+    private array $cacheAprendices = [];
+    /** @var array<int,Collection> Id_Aprendiz => juicios existentes por Id_Resultado */
+    private array $cacheJuicios = [];
 
+    /** @var array<int,array{fila:int,dato:string,error:string}> */
+    private array $errores = [];
+    /** @var array<string,int|string> aprendices que ya estaban en otra ficha: documento => ficha anterior */
+    private array $aprendicesMovidos = [];
+    private int $juiciosProcesados = 0;
+    private int $aprobacionesLocalesConservadas = 0;
+
+    /**
+     * @param  array<int,array<int,mixed>>  $filas  Filas de la hoja (Excel::toArray)
+     * @param  string|null  $fichaManual  Ficha elegida en el formulario (opcional)
+     * @return array{status:string,message:string,procesados:int,aprendices:int,errores:array,advertencias:array,detalles:array}
+     *
+     * @throws \RuntimeException si el archivo no es un reporte válido o la ficha no coincide
+     */
     public function procesarArchivoExcel(array $filas, ?string $fichaManual = null, ?Importacion $importacion = null): array
     {
         $inicio = microtime(true);
-        DB::beginTransaction();
+        $this->reiniciar();
 
-        try {
-            Log::info("[Importador] Iniciando con " . count($filas) . " filas.");
+        // ── 1. Interpretar el archivo (sin tocar la base de datos) ────────────
+        $reporte = ReporteSofiaPlus::desdeFilas($filas);
+        $this->errores = $reporte->errores;
 
-            // ── FASE 1: Escaneo Inteligente de Cabecera ───────────────────────
-            [$numeroFicha, $denominacion] = $this->escanearCabecera($filas);
+        $fichaManual = $fichaManual !== null && trim($fichaManual) !== '' ? trim($fichaManual) : null;
 
-            $denominacion = $denominacion ?: 'PROGRAMA SOFIA PLUS';
-            $numeroFicha  = $numeroFicha  ?: $fichaManual;
-
-            if (!$numeroFicha) {
-                throw new \RuntimeException(
-                    "No se detectó el número de Ficha. Selecciona una ficha manualmente o revisa el formato del Excel."
-                );
-            }
-
-            // ── FASE 2: Asegurar Ficha y Programa en BD ───────────────────────
-            $programa = Programa::firstOrCreate(
-                ['Nombre'  => $denominacion],
-                ['Codigo'  => 'S-PLUS', 'Modalidad' => 'PRESENCIAL', 'Version' => '1']
+        if ($fichaManual && $reporte->ficha && $fichaManual !== $reporte->ficha) {
+            throw new \RuntimeException(
+                "El archivo corresponde a la ficha {$reporte->ficha}, pero seleccionaste la ficha {$fichaManual}. " .
+                'Sube el reporte de la ficha correcta o deja el selector en «Autodetectar».'
             );
+        }
 
-            $ficha = Ficha::updateOrCreate(
-                ['Id_Ficha'    => $numeroFicha],
-                ['Id_Programa' => $programa->Id_Programa, 'Jornada' => 'DIURNA']
+        $numeroFicha = $reporte->ficha ?? $fichaManual;
+        if (! $numeroFicha) {
+            throw new \RuntimeException(
+                'No se detectó el número de Ficha en el archivo. Selecciona la ficha manualmente o revisa el formato del Excel.'
             );
+        }
 
-            // ── FASE 3: Localizar fila de inicio de datos ─────────────────────
-            $inicioDatos = $this->encontrarInicioDatos($filas);
+        Log::info('[Importador] Archivo interpretado.', [
+            'ficha' => $numeroFicha, 'registros' => count($reporte->registros), 'filas_con_error' => count($reporte->errores),
+        ]);
 
-            // ── FASE 4: CACHÉS EN MEMORIA (evita N+1 en competencias/instructores)
-            $cacheCompetencias = [];
-            $cacheResultados   = [];
-            $cacheFuncionarios = [];
+        // Sin registros válidos no se escribe nada (ni siquiera la ficha).
+        if (empty($reporte->registros)) {
+            $this->cerrarImportacion($importacion, $numeroFicha, 0, $inicio);
 
-            // ── FASE 5: PROCESAMIENTO FILA A FILA CON TOLERANCIA A FALLOS ────
-            $this->procesados    = 0;
-            $this->erroresPorFila = [];
+            return $this->resultado($numeroFicha, $reporte, 0);
+        }
 
-            for ($i = $inicioDatos; $i < count($filas); $i++) {
-                $fila = $filas[$i];
+        // ── 2. Escribir: transacción externa + savepoint por fila ─────────────
+        $conservarLocales = (bool) config('sena.importacion.conservar_aprobados_locales', true);
+
+        $aprendicesProcesados = DB::transaction(function () use ($reporte, $numeroFicha, $conservarLocales) {
+            $ficha = $this->asegurarFichaYPrograma($reporte, $numeroFicha);
+            $aprendicesOk = [];
+
+            foreach ($reporte->registros as $registro) {
+                $movidosAntes = $this->aprendicesMovidos;
 
                 try {
-                    $resultado = $this->procesarFila(
-                        $fila, $i + 1, $ficha,
-                        $cacheCompetencias, $cacheResultados, $cacheFuncionarios
-                    );
+                    // Transacción anidada => SAVEPOINT: si falla, solo se revierte esta fila.
+                    DB::transaction(fn () => $this->procesarRegistro($registro, $ficha, $conservarLocales));
 
-                    if ($resultado) {
-                        $this->procesados++;
-                    }
+                    $this->juiciosProcesados++;
+                    $aprendicesOk[$registro['documento']] = true;
+                } catch (\Throwable $e) {
+                    // Lo que esta fila creó fue revertido: las cachés en memoria ya no
+                    // son confiables (podrían apuntar a registros inexistentes).
+                    $this->cacheAprendices = $this->cacheCompetencias = $this->cacheResultados = [];
+                    $this->cacheFuncionarios = $this->cacheJuicios = [];
+                    $this->aprendicesMovidos = $movidosAntes;
 
-                } catch (\Exception $e) {
-                    // ✅ Error tolerado: registrar y continuar con la siguiente fila
-                    $this->erroresPorFila[] = [
-                        'fila'  => $i + 1,
-                        'dato'  => trim((string) ($fila[1] ?? $fila[0] ?? 'N/A')),
+                    $this->errores[] = [
+                        'fila'  => $registro['fila'],
+                        'dato'  => $registro['documento'],
                         'error' => $e->getMessage(),
                     ];
-                    Log::warning("[Importador] Fila " . ($i + 1) . " omitida: " . $e->getMessage());
+                    Log::warning("[Importador] Fila {$registro['fila']} omitida: " . $e->getMessage());
                 }
             }
 
-            DB::commit();
+            return count($aprendicesOk);
+        });
 
-            $duracion = round(microtime(true) - $inicio, 2);
-            Log::info("[Importador] Finalizado. Procesados: {$this->procesados}, Errores: " . count($this->erroresPorFila));
+        // ── 3. Registro de la importación y evento (ya con todo confirmado) ───
+        $this->cerrarImportacion($importacion, $numeroFicha, $aprendicesProcesados, $inicio, $reporte);
 
-            // ── FASE 6: Actualizar registro de importación ────────────────────
-            if ($importacion) {
-                $importacion->update([
-                    'aprendices_procesados' => $this->procesados,
-                    'duracion_segundos'     => (int) $duracion,
-                    'estado'                => count($this->erroresPorFila) === 0 ? 'exitoso' : 'con_advertencias',
-                    'detalle'               => count($this->erroresPorFila) > 0
-                        ? count($this->erroresPorFila) . " fila(s) con error: " . collect($this->erroresPorFila)->pluck('dato')->implode(', ')
-                        : "Importación completada sin errores.",
-                ]);
-            }
-
-            // ── FASE 7: Disparar Evento (OCP — los Listeners hacen el resto) ──
-            if ($importacion) {
-                ImportacionProcesada::dispatch($importacion, $this->procesados, (string) $ficha->Id_Ficha, $this->erroresPorFila);
-            }
-
-            return [
-                'status'    => 'success',
-                'message'   => "Se procesaron {$this->procesados} registros correctamente." .
-                               (count($this->erroresPorFila) > 0
-                                   ? " (" . count($this->erroresPorFila) . " filas omitidas con error)"
-                                   : ""),
-                'procesados'      => $this->procesados,
-                'errores'         => $this->erroresPorFila,
-                'detalles'        => ['ficha' => $ficha->Id_Ficha],
-            ];
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error("[Importador] Error fatal: " . $e->getMessage());
-            throw $e;
+        if ($importacion) {
+            ImportacionProcesada::dispatch($importacion, $aprendicesProcesados, (string) $numeroFicha, $this->errores);
         }
+
+        Log::info("[Importador] Finalizado. Juicios: {$this->juiciosProcesados}, aprendices: {$aprendicesProcesados}, errores: " . count($this->errores));
+
+        return $this->resultado($numeroFicha, $reporte, $aprendicesProcesados);
     }
 
-    // ══════════════════════════════════════════════════════════════════════════
-    //  MÉTODOS PRIVADOS DE APOYO
-    // ══════════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════════════
+    //  Escritura
+    // ══════════════════════════════════════════════════════════════════════
 
-    /**
-     * Escanea las primeras 20 filas buscando el número de ficha y la denominación.
-     */
-    private function escanearCabecera(array $filas): array
+    private function asegurarFichaYPrograma(ReporteSofiaPlus $reporte, string $numeroFicha): Ficha
     {
-        $numeroFicha  = null;
-        $denominacion = null;
-
-        foreach ($filas as $rIdx => $fila) {
-            if ($rIdx > 20) break;
-
-            $filaTexto = strtoupper(implode(' ', array_filter(array_map('strval', $fila))));
-
-            if (!$numeroFicha && (str_contains($filaTexto, 'FICHA') || str_contains($filaTexto, 'CARACTERIZ'))) {
-                foreach ($fila as $val) {
-                    if (preg_match('/(\d{7,})/', trim((string) $val), $m)) {
-                        $numeroFicha = $m[1];
-                        break;
-                    }
-                }
-            }
-
-            if (!$denominacion && str_contains($filaTexto, 'DENOMINACI')) {
-                foreach ($fila as $val) {
-                    $v = trim((string) $val);
-                    if (!empty($v) && !str_contains(strtoupper($v), 'DENOMINACI')) {
-                        $denominacion = $v;
-                        break;
-                    }
-                }
-            }
-
-            if ($numeroFicha && $denominacion) break;
-        }
-
-        return [$numeroFicha, $denominacion];
-    }
-
-    /**
-     * Busca la fila donde comienzan los datos (fila con "DOCUMENTO" y "NOMBRE").
-     */
-    private function encontrarInicioDatos(array $filas): int
-    {
-        foreach ($filas as $idx => $fila) {
-            $filaStr = strtoupper(implode(' ', array_filter(array_map('strval', $fila))));
-            if (str_contains($filaStr, 'DOCUMENTO') && str_contains($filaStr, 'NOMBRE')) {
-                return $idx + 1;
-            }
-        }
-        return 13; // Fallback al default histórico
-    }
-
-    /**
-     * Procesa una única fila de datos.
-     * Lanza una excepción si la fila no es procesable.
-     * Devuelve true si se procesó, false si se saltó (fila vacía válida).
-     */
-    public function procesarFila(
-        array  $fila,
-        int    $numFila,
-        Ficha  $ficha,
-        array  &$cacheCompetencias,
-        array  &$cacheResultados,
-        array  &$cacheFuncionarios
-    ): bool {
-        // Detectar documento del aprendiz (columnas 0, 1 o 2)
-        $docAprendiz = null;
-        foreach ([0, 1, 2] as $colIdx) {
-            $val = trim((string) ($fila[$colIdx] ?? ''));
-            if (is_numeric($val) && strlen($val) >= 7) {
-                $docAprendiz = $val;
-                break;
-            }
-        }
-
-        // Fila vacía o sin documento → saltar sin error
-        if (!$docAprendiz) {
-            return false;
-        }
-
-        // ── Aprendiz ─────────────────────────────────────────────────────
-        $aprendiz = Aprendiz::updateOrCreate(
-            ['Documento' => $docAprendiz],
+        $programa = Programa::firstOrCreate(
+            ['Nombre' => $reporte->denominacion ?: 'PROGRAMA SOFIA PLUS'],
             [
-                'Nombre'         => trim((string) ($fila[2] ?? 'N/A')),
-                'Apellido'       => trim((string) ($fila[3] ?? 'N/A')),
-                'Id_Ficha'       => $ficha->Id_Ficha,
-                'Tipo_Documento' => 'CC',
-                'Estado'         => trim((string) ($fila[4] ?? 'EN FORMACION')),
+                'Codigo'    => $reporte->codigoPrograma ?: 'S-PLUS',
+                'Modalidad' => mb_strtoupper($reporte->modalidad ?: 'PRESENCIAL'),
+                'Version'   => $reporte->versionPrograma ?: '1',
             ]
         );
 
-        // ── Competencia (caché en memoria) ────────────────────────────────
-        $strComp = (string) ($fila[5] ?? 'COMP-GEN');
-        if (!isset($cacheCompetencias[$strComp])) {
-            $partes  = explode(' - ', $strComp, 2);
-            $codigo  = trim($partes[0]);
-            $nombre  = $partes[1] ?? 'Competencia sin nombre';
-            $comp    = Competencia::updateOrCreate(['Codigo' => $codigo], ['Nombre' => $nombre]);
-            $cacheCompetencias[$strComp] = $comp->Id_Competencia;
+        // Programas creados antes con datos de relleno ("S-PLUS"): completarlos.
+        if ($programa->Codigo === 'S-PLUS' && $reporte->codigoPrograma) {
+            $programa->update([
+                'Codigo'    => $reporte->codigoPrograma,
+                'Version'   => $reporte->versionPrograma ?: $programa->Version,
+                'Modalidad' => $reporte->modalidad ? mb_strtoupper($reporte->modalidad) : $programa->Modalidad,
+            ]);
         }
 
-        // ── Resultado de Aprendizaje (caché en memoria) ───────────────────
-        $strRes = (string) ($fila[6] ?? 'RAP-GEN');
-        if (!isset($cacheResultados[$strRes])) {
-            $partes  = explode(' - ', $strRes, 2);
-            $codigo  = trim($partes[0]);
-            $nombre  = $partes[1] ?? 'Resultado sin nombre';
-            $res     = Resultado::updateOrCreate(
-                ['Codigo' => $codigo],
-                ['Nombre' => $nombre, 'Id_Competencia' => $cacheCompetencias[$strComp]]
+        $ficha = Ficha::find($numeroFicha);
+        if (! $ficha) {
+            // La jornada no viene en el reporte: se crea con el valor por defecto
+            // y NO se vuelve a pisar en importaciones posteriores.
+            return Ficha::create([
+                'Id_Ficha'    => $numeroFicha,
+                'Id_Programa' => $programa->Id_Programa,
+                'Jornada'     => 'DIURNA',
+            ]);
+        }
+
+        if ((int) $ficha->Id_Programa !== (int) $programa->Id_Programa) {
+            $ficha->update(['Id_Programa' => $programa->Id_Programa]);
+        }
+
+        return $ficha;
+    }
+
+    /** @param  array<string,mixed>  $r  Registro normalizado de ReporteSofiaPlus */
+    private function procesarRegistro(array $r, Ficha $ficha, bool $conservarLocales): void
+    {
+        $aprendiz = $this->resolverAprendiz($r, $ficha);
+        $resultadoId = $this->resolverResultado($r);
+        $funcionarioId = $this->resolverFuncionario($r['funcionario']);
+
+        $estado = $r['aprobado'] ? 1 : 0;
+        $juicio = $this->juiciosDe($aprendiz)->get($resultadoId);
+
+        if ($juicio) {
+            // Una aprobación hecha a mano en la matriz no se borra porque el
+            // Excel (aún) diga "POR EVALUAR". Si el Excel ya la trae aprobada,
+            // el dato oficial prevalece.
+            if ($conservarLocales && $estado === 0 && (int) $juicio->Estado === 1 && $juicio->registrado_por !== null) {
+                $this->aprobacionesLocalesConservadas++;
+                return;
+            }
+
+            $juicio->fill([
+                'Estado'         => $estado,
+                'Id_Funcionario' => $funcionarioId,
+                'registrado_por' => null,
+                'Fecha'          => $r['fecha']?->toDateString(),
+                'Hora'           => $r['fecha'],
+            ])->save();
+
+            return;
+        }
+
+        $nuevo = JuicioEvaluativo::create([
+            'Id_Resultado'   => $resultadoId,
+            'Id_Aprendiz'    => $aprendiz->Id_Aprendiz,
+            'Estado'         => $estado,
+            'Id_Funcionario' => $funcionarioId,
+            'Fecha'          => $r['fecha']?->toDateString(),
+            'Hora'           => $r['fecha'],
+        ]);
+        $this->juiciosDe($aprendiz)->put($resultadoId, $nuevo);
+    }
+
+    private function resolverAprendiz(array $r, Ficha $ficha): Aprendiz
+    {
+        $doc = $r['documento'];
+        if (isset($this->cacheAprendices[$doc])) {
+            return $this->cacheAprendices[$doc];
+        }
+
+        $datos = [
+            'Tipo_Documento' => $r['tipo_documento'],
+            'Nombre'         => $r['nombre'],
+            'Apellido'       => $r['apellidos'],
+            'Estado'         => $r['estado'],
+            'Id_Ficha'       => $ficha->Id_Ficha,
+        ];
+
+        $aprendiz = Aprendiz::where('Documento', $doc)->first();
+
+        if ($aprendiz) {
+            if ((int) $aprendiz->Id_Ficha !== (int) $ficha->Id_Ficha) {
+                // El documento es único en todo el sistema: el aprendiz "se mueve".
+                // Sus juicios anteriores se conservan; se avisa al usuario.
+                $this->aprendicesMovidos[$doc] = $aprendiz->Id_Ficha;
+            }
+            $aprendiz->fill($datos)->save();
+        } else {
+            $aprendiz = Aprendiz::create(['Documento' => $doc] + $datos);
+        }
+
+        return $this->cacheAprendices[$doc] = $aprendiz;
+    }
+
+    private function resolverResultado(array $r): int
+    {
+        $codComp = $r['competencia_cod'];
+        if (! isset($this->cacheCompetencias[$codComp])) {
+            $comp = Competencia::updateOrCreate(['Codigo' => $codComp], ['Nombre' => $r['competencia_nom']]);
+            $this->cacheCompetencias[$codComp] = $comp->Id_Competencia;
+        }
+
+        $codRes = $r['resultado_cod'];
+        if (! isset($this->cacheResultados[$codRes])) {
+            $res = Resultado::updateOrCreate(
+                ['Codigo' => $codRes],
+                ['Nombre' => $r['resultado_nom'], 'Id_Competencia' => $this->cacheCompetencias[$codComp]]
             );
-            $cacheResultados[$strRes] = $res->Id_Resultado;
+            $this->cacheResultados[$codRes] = $res->Id_Resultado;
         }
 
-        // ── Funcionario / Instructor (caché en memoria) ───────────────────
-        $strFunc = trim((string) ($fila[9] ?? 'INSTRUCTOR SENA'));
-        if (!isset($cacheFuncionarios[$strFunc])) {
-            $partes   = explode(' - ', $strFunc, 2);
-            $docFunc  = preg_replace('/[^0-9]/', '', $partes[0]) ?: '1000';
-            $nombre   = $partes[1] ?? $strFunc;
-            $inst     = Funcionario::firstOrCreate(
-                ['Documento' => $docFunc],
-                ['Nombre' => $nombre, 'Tipo_Documento' => 'CC', 'Apellido' => 'SENA']
+        return $this->cacheResultados[$codRes];
+    }
+
+    /** @param  array{tipo:string,documento:string,nombre:string}|null  $f */
+    private function resolverFuncionario(?array $f): ?int
+    {
+        if ($f === null) {
+            return null; // juicio todavía sin registrar en Sofia Plus
+        }
+
+        if (! array_key_exists($f['documento'], $this->cacheFuncionarios)) {
+            $func = Funcionario::firstOrCreate(
+                ['Documento' => $f['documento']],
+                ['Tipo_Documento' => $f['tipo'], 'Nombre' => $f['nombre'], 'Apellido' => '']
             );
-            $cacheFuncionarios[$strFunc] = $inst->Id_Funcionario;
+            $this->cacheFuncionarios[$f['documento']] = $func->Id_Funcionario;
         }
 
-        // ── Juicio Evaluativo ─────────────────────────────────────────────
-        $juicioRaw = strtoupper(trim((string) ($fila[7] ?? '')));
-        $estado    = (str_contains($juicioRaw, 'APROB') || $juicioRaw === 'A' || $juicioRaw === 'S') ? 1 : 0;
+        return $this->cacheFuncionarios[$f['documento']];
+    }
 
-        JuicioEvaluativo::updateOrCreate(
-            ['Id_Resultado' => $cacheResultados[$strRes], 'Id_Aprendiz' => $aprendiz->Id_Aprendiz],
-            [
-                'Estado'        => $estado,
-                'Id_Funcionario'=> $cacheFuncionarios[$strFunc],
-                'Fecha'         => now()->format('Y-m-d'),
-            ]
-        );
+    /** Juicios existentes del aprendiz (1 consulta por aprendiz, no por fila). */
+    private function juiciosDe(Aprendiz $aprendiz): Collection
+    {
+        return $this->cacheJuicios[$aprendiz->Id_Aprendiz]
+            ??= JuicioEvaluativo::where('Id_Aprendiz', $aprendiz->Id_Aprendiz)->get()->keyBy('Id_Resultado');
+    }
 
-        return true;
+    // ══════════════════════════════════════════════════════════════════════
+    //  Resultado y bitácora
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** @return array<int,string> */
+    private function advertencias(ReporteSofiaPlus $reporte): array
+    {
+        $a = [];
+
+        if ($this->aprendicesMovidos) {
+            $a[] = count($this->aprendicesMovidos) . ' aprendiz(es) ya estaban registrados en otra ficha y fueron movidos a esta '
+                . '(sus juicios anteriores se conservan): documentos ' . implode(', ', array_slice(array_keys($this->aprendicesMovidos), 0, 10))
+                . (count($this->aprendicesMovidos) > 10 ? ', …' : '') . '.';
+        }
+        if ($this->aprobacionesLocalesConservadas) {
+            $a[] = "{$this->aprobacionesLocalesConservadas} juicio(s) aprobados manualmente en la matriz se conservaron aunque el Excel aún los muestra «POR EVALUAR».";
+        }
+        if ($reporte->juiciosDesconocidos) {
+            $a[] = 'Valores de juicio no reconocidos (se tomaron como pendientes): '
+                . collect($reporte->juiciosDesconocidos)->map(fn ($n, $v) => "{$v} ({$n})")->implode(', ') . '.';
+        }
+        if ($reporte->funcionariosIlegibles) {
+            $a[] = "{$reporte->funcionariosIlegibles} registro(s) con un funcionario ilegible quedaron sin funcionario asignado.";
+        }
+
+        return $a;
+    }
+
+    private function resultado(string $ficha, ReporteSofiaPlus $reporte, int $aprendices): array
+    {
+        $advertencias = $this->advertencias($reporte);
+
+        $mensaje = $this->juiciosProcesados > 0
+            ? "Ficha {$ficha}: se importaron {$this->juiciosProcesados} juicios de {$aprendices} aprendices."
+            : 'No se importó ningún juicio.';
+        if ($this->errores) {
+            $mensaje .= ' ' . count($this->errores) . ' fila(s) omitidas con error.';
+        }
+        if ($advertencias) {
+            $mensaje .= ' Atención: ' . implode(' ', $advertencias);
+        }
+
+        return [
+            'status'       => 'success',
+            'message'      => $mensaje,
+            'procesados'   => $this->juiciosProcesados,
+            'aprendices'   => $aprendices,
+            'errores'      => $this->errores,
+            'advertencias' => $advertencias,
+            'detalles'     => ['ficha' => $ficha],
+        ];
+    }
+
+    private function cerrarImportacion(?Importacion $importacion, string $ficha, int $aprendices, float $inicio, ?ReporteSofiaPlus $reporte = null): void
+    {
+        if (! $importacion) {
+            return;
+        }
+
+        $detalle = ["Juicios importados: {$this->juiciosProcesados}. Aprendices: {$aprendices}."];
+        if ($reporte) {
+            $detalle = array_merge($detalle, $this->advertencias($reporte));
+        }
+        if ($this->errores) {
+            $detalle[] = count($this->errores) . ' fila(s) con error: ' . collect($this->errores)
+                ->take(20)->map(fn ($e) => "fila {$e['fila']} ({$e['dato']})")->implode(', ')
+                . (count($this->errores) > 20 ? ', …' : '');
+        }
+
+        $importacion->update([
+            'id_ficha'              => $ficha,
+            'aprendices_procesados' => $aprendices,
+            'duracion_segundos'     => (int) round(microtime(true) - $inicio),
+            'estado'                => $this->errores ? 'con_advertencias' : 'exitoso',
+            'detalle'               => implode("\n", $detalle),
+        ]);
+    }
+
+    private function reiniciar(): void
+    {
+        $this->cacheCompetencias = $this->cacheResultados = $this->cacheFuncionarios = [];
+        $this->cacheAprendices = $this->cacheJuicios = [];
+        $this->errores = $this->aprendicesMovidos = [];
+        $this->juiciosProcesados = $this->aprobacionesLocalesConservadas = 0;
     }
 }

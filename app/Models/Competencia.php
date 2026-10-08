@@ -17,9 +17,4 @@ class Competencia extends Model
     {
         return $this->hasMany(Resultado::class, 'Id_Competencia', 'Id_Competencia');
     }
-
-    public function fichas()
-    {
-        return $this->hasMany(Ficha::class, 'Id_Competencia', 'Id_Competencia');
-    }
 }

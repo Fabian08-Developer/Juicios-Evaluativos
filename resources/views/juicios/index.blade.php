@@ -24,7 +24,7 @@
                     </td>
                     <td style="padding: 1rem 0;">
                         <div style="font-size: 0.85rem; font-weight: 600; color: var(--accent);">
-                            {{ $juicio->resultado->competencias->first()->Codigo ?? 'N/A' }}
+                            {{ $juicio->resultado->competencia->Codigo ?? 'N/A' }}
                         </div>
                         <div style="font-size: 0.75rem; color: var(--text-muted);">RAP: {{ $juicio->resultado->Codigo }}</div>
                     </td>
@@ -39,7 +39,13 @@
                         {{ $juicio->Fecha ? $juicio->Fecha->format('d/m/Y') : 'Sin fecha' }}
                     </td>
                     <td style="padding: 1rem 0; font-size: 0.85rem; color: var(--text-muted);">
-                        {{ $juicio->funcionario->Nombre ?? 'Sistema' }} {{ $juicio->funcionario->Apellido ?? '' }}
+                        @if($juicio->funcionario)
+                            {{ $juicio->funcionario->Nombre }} {{ $juicio->funcionario->Apellido }}
+                        @elseif($juicio->registrador)
+                            {{ $juicio->registrador->name }} <span style="opacity:.6">(calificado en el sistema)</span>
+                        @else
+                            —
+                        @endif
                     </td>
                 </tr>
                 @endforeach

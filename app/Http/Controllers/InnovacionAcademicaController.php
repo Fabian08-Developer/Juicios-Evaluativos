@@ -6,10 +6,10 @@ use App\Mail\AlertaBienestarMail;
 use App\Models\Aprendiz;
 use App\Models\Competencia;
 use App\Models\Ficha;
-use App\Models\Funcionario;
 use App\Models\JuicioEvaluativo;
 use App\Models\Remision;
 use App\Models\Resultado;
+use App\Services\RiesgoDesercionService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -164,34 +164,15 @@ class InnovacionAcademicaController extends Controller
             $aprendicesQuery->where('Estado', $estadoFiltro);
         }
 
-        $aprendices = $aprendicesQuery->get()->map(function ($a) {
-            // Algoritmo Heurístico de Cálculo de Riesgo (0 a 100)
-            $porcentajePendientes = $a->total_juicios > 0 ? ($a->pendientes_count / $a->total_juicios) * 100 : 0;
-            
-            $score = round($porcentajePendientes);
+        $riesgo = app(RiesgoDesercionService::class);
 
-            // Penalización por estados anormales
-            if (in_array($a->Estado, ['RETIRO VOLUNTARIO', 'CANCELADO', 'TRASLADADO'])) {
-                $score = 100;
-            } elseif ($porcentajePendientes >= 70) {
-                $score = max(85, $score); // Alerta crítica automática si debe ≥70%
-            }
+        $aprendices = $aprendicesQuery->get()->map(function ($a) use ($riesgo) {
+            $r = $riesgo->evaluar($a->Estado, (int) $a->total_juicios, (int) $a->pendientes_count);
 
-            $a->score_riesgo = min(100, $score);
-
-            if ($a->score_riesgo >= 75) {
-                $a->semaforo = 'critico';
-                $a->semaforo_label = '🔴 Crítico';
-                $a->semaforo_color = '#ef4444';
-            } elseif ($a->score_riesgo >= 40) {
-                $a->semaforo = 'moderado';
-                $a->semaforo_label = '🟡 Moderado';
-                $a->semaforo_color = '#f59e0b';
-            } else {
-                $a->semaforo = 'estable';
-                $a->semaforo_label = '🟢 Estable';
-                $a->semaforo_color = '#10b981';
-            }
+            $a->score_riesgo    = $r['score'];
+            $a->semaforo        = $r['nivel'];
+            $a->semaforo_label  = $r['label'];
+            $a->semaforo_color  = $r['color'];
 
             return $a;
         });
@@ -212,71 +193,98 @@ class InnovacionAcademicaController extends Controller
         ));
     }
 
-    public function alertaMasiva(Request $request)
+    public function alertaMasiva(Request $request, RiesgoDesercionService $riesgo)
     {
-        $ids = $request->input('aprendices_ids', []);
-        
+        $ids = array_values(array_filter(array_map('intval', (array) $request->input('aprendices_ids', []))));
+
         if (empty($ids)) {
             return back()->with('error', 'Por favor selecciona al menos un aprendiz para emitir la alerta a Bienestar.');
         }
 
-        $aprendices = Aprendiz::with(['ficha.programa', 'juicios' => fn($q) => $q->where('Estado', 0)])
+        $aprendices = Aprendiz::with('ficha.programa')
+            ->withCount([
+                'juicios as total_juicios',
+                'juicios as pendientes_count' => fn ($q) => $q->where('Estado', 0),
+            ])
             ->whereIn('Id_Aprendiz', $ids)
             ->get();
 
-        $radicadoConsecutivo = (Remision::max('id') ?? 0) + 1;
-        $radicado = 'REM-' . date('Y') . '-' . str_pad($radicadoConsecutivo, 4, '0', STR_PAD_LEFT);
-        $aprendicesDataMail = [];
-        $fichaPrincipal = $aprendices->first()->ficha ?? null;
-
-        foreach ($aprendices as $ap) {
-            $totalJuicios = $ap->juicios()->count();
-            $pendientes = $ap->juicios->count();
-            $score = $totalJuicios > 0 ? round(($pendientes / $totalJuicios) * 100) : 0;
-            if (in_array($ap->Estado, ['RETIRO VOLUNTARIO', 'CANCELADO', 'TRASLADADO'])) {
-                $score = 100;
-            }
-            $score = min(100, $score);
-            $semaforo = $score >= 70 ? 'CRITICO' : 'MODERADO';
-
-            Remision::create([
-                'Id_Aprendiz'      => $ap->Id_Aprendiz,
-                'Id_Ficha'         => $ap->Id_Ficha,
-                'score_riesgo'     => $score,
-                'nivel_semaforo'   => $semaforo,
-                'total_pendientes' => $pendientes,
-                'estado_remision'  => 'PENDIENTE',
-                'radicado'         => $radicado,
-                'motivo'           => "Alerta por riesgo de deserción ({$score}% juicios pendientes)",
-            ]);
-
-            $aprendicesDataMail[] = [
-                'nombre'           => $ap->Nombre,
-                'apellido'         => $ap->Apellido,
-                'documento'        => $ap->Documento,
-                'ficha'            => $ap->Id_Ficha,
-                'pendientes_count' => $pendientes,
-                'score_riesgo'     => $score,
-            ];
+        if ($aprendices->isEmpty()) {
+            return back()->with('error', 'No se encontraron los aprendices seleccionados.');
         }
 
-        // Envío de correo formal a leiderfabianramoscano99@gmail.com
-        $correoDestino = 'leiderfabianramoscano99@gmail.com';
-        try {
-            Mail::to($correoDestino)->send(new AlertaBienestarMail(
-                $aprendicesDataMail,
-                $radicado,
-                (string) ($fichaPrincipal->Id_Ficha ?? ''),
-                $fichaPrincipal->programa->Nombre ?? '',
-                now()->format('d/m/Y H:i A')
-            ));
-            Log::info("[Alerta Bienestar] Correo enviado exitosamente a {$correoDestino} (Radicado: {$radicado}).");
-        } catch (\Throwable $e) {
-            Log::error("[Alerta Bienestar] No se pudo enviar el correo a {$correoDestino}: " . $e->getMessage());
+        $aprendicesDataMail = [];
+        $fichaPrincipal     = $aprendices->first()->ficha ?? null;
+
+        // Remisiones + radicado en una sola transacción: o se registran todas o ninguna.
+        $radicado = DB::transaction(function () use ($aprendices, $riesgo, &$aprendicesDataMail) {
+            $consecutivo = (Remision::max('id') ?? 0) + 1;
+            $radicado    = 'REM-' . date('Y') . '-' . str_pad($consecutivo, 4, '0', STR_PAD_LEFT);
+
+            foreach ($aprendices as $ap) {
+                $pendientes = (int) $ap->pendientes_count;
+                // Mismo cálculo que la pantalla de diagnóstico: el score guardado
+                // coincide con el que vio el instructor al emitir la alerta.
+                $r = $riesgo->evaluar($ap->Estado, (int) $ap->total_juicios, $pendientes);
+
+                Remision::create([
+                    'Id_Aprendiz'      => $ap->Id_Aprendiz,
+                    'Id_Ficha'         => $ap->Id_Ficha,
+                    'score_riesgo'     => $r['score'],
+                    'nivel_semaforo'   => strtoupper($r['nivel']),
+                    'total_pendientes' => $pendientes,
+                    'estado_remision'  => 'PENDIENTE',
+                    'radicado'         => $radicado,
+                    'motivo'           => "Alerta por riesgo de deserción ({$r['score']}% de riesgo, {$pendientes} juicios pendientes)",
+                ]);
+
+                $aprendicesDataMail[] = [
+                    'nombre'           => $ap->Nombre,
+                    'apellido'         => $ap->Apellido,
+                    'documento'        => $ap->Documento,
+                    'ficha'            => $ap->Id_Ficha,
+                    'pendientes_count' => $pendientes,
+                    'score_riesgo'     => $r['score'],
+                ];
+            }
+
+            return $radicado;
+        });
+
+        // ── Correo a Bienestar (destinatario por configuración) ───────────
+        $correoDestino = config('sena.bienestar_email');
+        $correoEnviado = false;
+        $motivoNoEnvio = null;
+
+        if (! $correoDestino) {
+            $motivoNoEnvio = 'no hay un correo de Bienestar configurado (BIENESTAR_EMAIL)';
+            Log::warning("[Alerta Bienestar] Radicado {$radicado} registrado sin correo: BIENESTAR_EMAIL no configurado.");
+        } else {
+            try {
+                Mail::to($correoDestino)->send(new AlertaBienestarMail(
+                    $aprendicesDataMail,
+                    $radicado,
+                    (string) ($fichaPrincipal->Id_Ficha ?? ''),
+                    $fichaPrincipal->programa->Nombre ?? '',
+                    now()->format('d/m/Y H:i A')
+                ));
+                $correoEnviado = true;
+                Log::info("[Alerta Bienestar] Correo enviado a {$correoDestino} (Radicado: {$radicado}).");
+            } catch (\Throwable $e) {
+                $motivoNoEnvio = 'falló el envío del correo';
+                Log::error("[Alerta Bienestar] No se pudo enviar el correo a {$correoDestino} (Radicado {$radicado}): " . $e->getMessage());
+            }
+        }
+
+        $total = count($aprendicesDataMail);
+
+        if ($correoEnviado) {
+            return redirect()->route('remisiones.index')
+                ->with('success', "✅ Alerta oficial emitida (Radicado: {$radicado}). Se remitieron {$total} aprendices a Bienestar y se envió la notificación por correo.");
         }
 
         return redirect()->route('remisiones.index')
-            ->with('success', "✅ Alerta oficial emitida (Radicado: {$radicado}). Se remitieron " . count($aprendices) . " aprendices a Bienestar y se despachó la notificación a {$correoDestino}.");
+            ->with('warning', "Alerta registrada (Radicado: {$radicado}) con {$total} aprendices, pero el correo NO se envió: {$motivoNoEnvio}. Descarga el oficio en PDF y radícalo manualmente.");
     }
 
     public function historialRemisiones(Request $request)
@@ -433,8 +441,8 @@ class InnovacionAcademicaController extends Controller
         ]);
 
         try {
-            $funcionarioId = Funcionario::first()->Id_Funcionario ?? 1;
-
+            // Se registra QUIÉN calificó (usuario autenticado). Id_Funcionario es el
+            // funcionario oficial de Sofia Plus y no se inventa para calificaciones locales.
             $juicio = JuicioEvaluativo::updateOrCreate(
                 [
                     'Id_Aprendiz'  => $request->id_aprendiz,
@@ -442,18 +450,13 @@ class InnovacionAcademicaController extends Controller
                 ],
                 [
                     'Estado'         => $request->estado,
-                    'Id_Funcionario' => $funcionarioId,
+                    'registrado_por' => $request->user()->id,
                     'Fecha'          => now()->toDateString(),
                     'Hora'           => now()
                 ]
             );
 
-            // Invalidar caché del dashboard inmediatamente
-            Cache::forget('dashboard.stats.global');
-            $aprendiz = Aprendiz::find($request->id_aprendiz);
-            if ($aprendiz && $aprendiz->Id_Ficha) {
-                Cache::forget("dashboard.stats.ficha.{$aprendiz->Id_Ficha}");
-            }
+            $this->invalidarCacheDashboard([$request->id_aprendiz]);
 
             return response()->json([
                 'success' => true,
@@ -474,16 +477,16 @@ class InnovacionAcademicaController extends Controller
     {
         $request->validate([
             'cambios' => 'required|array',
-            'cambios.*.id_aprendiz'  => 'required|integer',
-            'cambios.*.id_resultado' => 'required|integer',
+            'cambios.*.id_aprendiz'  => 'required|integer|exists:aprendiz,Id_Aprendiz',
+            'cambios.*.id_resultado' => 'required|integer|exists:resultados,Id_Resultado',
             'cambios.*.estado'       => 'required|integer|in:0,1',
         ]);
 
         try {
-            $funcionarioId = Funcionario::first()->Id_Funcionario ?? 1;
             $count = 0;
+            $usuarioId = $request->user()->id;
 
-            DB::transaction(function () use ($request, $funcionarioId, &$count) {
+            DB::transaction(function () use ($request, $usuarioId, &$count) {
                 foreach ($request->cambios as $item) {
                     JuicioEvaluativo::updateOrCreate(
                         [
@@ -492,7 +495,7 @@ class InnovacionAcademicaController extends Controller
                         ],
                         [
                             'Estado'         => $item['estado'],
-                            'Id_Funcionario' => $funcionarioId,
+                            'registrado_por' => $usuarioId,
                             'Fecha'          => now()->toDateString(),
                             'Hora'           => now()
                         ]
@@ -501,7 +504,7 @@ class InnovacionAcademicaController extends Controller
                 }
             });
 
-            Cache::forget('dashboard.stats.global');
+            $this->invalidarCacheDashboard(collect($request->cambios)->pluck('id_aprendiz')->all());
 
             return response()->json([
                 'success' => true,
@@ -531,7 +534,7 @@ class InnovacionAcademicaController extends Controller
 
         $aprendiz = Aprendiz::find($request->aprendiz_id);
 
-        Log::info("[Notificación SENA] Alerta enviada por {$request->canal} al aprendiz {$aprendiz->Nombre} {$aprendiz->Apellido} ({$aprendiz->Documento}).", [
+        Log::info("[Notificación SENA] Registro en bitácora (canal: {$request->canal}; este endpoint NO envía el mensaje) para el aprendiz {$aprendiz->Nombre} {$aprendiz->Apellido} ({$aprendiz->Documento}).", [
             'mensaje' => $request->mensaje
         ]);
 
@@ -540,5 +543,20 @@ class InnovacionAcademicaController extends Controller
         }
 
         return back()->with('success', "✅ Notificación registrada en bitácora para el aprendiz {$aprendiz->Nombre} {$aprendiz->Apellido}.");
+    }
+
+    /**
+     * Invalida la caché del dashboard global y la de cada ficha afectada.
+     *
+     * @param  array<int,int|string>  $aprendizIds
+     */
+    private function invalidarCacheDashboard(array $aprendizIds): void
+    {
+        Cache::forget('dashboard.stats.global');
+
+        Aprendiz::whereIn('Id_Aprendiz', $aprendizIds)
+            ->distinct()
+            ->pluck('Id_Ficha')
+            ->each(fn ($fichaId) => Cache::forget("dashboard.stats.ficha.{$fichaId}"));
     }
 }

@@ -49,10 +49,14 @@ El sistema permite importar, visualizar y analizar los juicios evaluativos de lo
 - Modal de confirmación estilizado para eliminación de fichas.
 
 ### 📤 Importación Masiva (Sofia Plus)
-- Carga de archivos **Excel (.xlsx)** exportados desde el sistema Sofia Plus.
-- Validación de formato, columnas requeridas (`FICHA`, `DOCUMENTO`, `NOMBRE`) y consistencia de datos.
-- Reporte detallado de **filas importadas, omitidas y errores** por campo.
-- Historial completo de importaciones con metadatos de cada carga.
+- Carga el **«Reporte de Juicios de Evaluación»** exportado de Sofia Plus (`.xls`, `.xlsx` o `.csv`).
+- Las columnas se ubican **por el texto de su encabezado**, no por posición: funciona con exportaciones de 10 columnas y con las que traen una columna extra (la fecha y el funcionario cambian de lugar entre exportaciones).
+- Se leen del archivo: ficha, programa (código, versión, modalidad), tipo y número de documento (CC/TI…), estado del aprendiz, competencia, resultado de aprendizaje, juicio, **fecha y hora reales del juicio** y funcionario que lo registró.
+- Solo el texto exacto `APROBADO` cuenta como aprobado; `POR EVALUAR` y `NO APROBADO` quedan pendientes. Cualquier otro valor se avisa.
+- Si seleccionas una ficha y el archivo es de otra, la importación se **rechaza** (no se importa en silencio a la ficha equivocada).
+- Cada fila se procesa en un *savepoint*: una fila con error se omite y se reporta, sin perder las demás.
+- Una aprobación hecha a mano en la matriz **no se borra** si el Excel todavía dice `POR EVALUAR` (configurable en `config/sena.php`).
+- Reporte detallado de juicios importados, aprendices, filas omitidas y advertencias; historial completo en *Historial de importaciones*.
 
 ### 📊 Matriz Interactiva de Calificación
 - Calificación de juicios evaluativos en tiempo real por aprendiz y competencia.
@@ -74,7 +78,7 @@ El sistema permite importar, visualizar y analizar los juicios evaluativos de lo
 ### 📣 Sistema de Remisiones y Alertas a Bienestar
 - Emisión de **alertas masivas oficiales** a Bienestar al Aprendiz / Coordinación.
 - Registro en base de datos con **número de radicado único** (`REM-YYYY-XXXX`).
-- **Envío de correo electrónico institucional** con plantilla HTML oficial.
+- **Envío de correo electrónico institucional** (`BIENESTAR_EMAIL`) con plantilla HTML oficial; si no está configurado o falla, el sistema lo informa en lugar de aparentar éxito.
 - Generación de **Oficio Institucional de Remisión en PDF** con membrete SENA, listo para radicar.
 - **Bandeja de Remisiones**: historial completo, KPIs de casos, filtros y gestión de estados.
 - Cambio de estado de atención: Pendiente · En Acompañamiento · Atendido · Cerrado.
@@ -152,9 +156,10 @@ php artisan key:generate
 # DB_USERNAME=postgres
 # DB_PASSWORD=tu_contraseña
 
-# 5. Ejecutar migraciones y seeder
+# 5. Ejecutar migraciones y crear el administrador
+#    (opcional: define ADMIN_EMAIL / ADMIN_PASSWORD / BIENESTAR_EMAIL en .env antes)
 php artisan migrate --force
-php artisan db:seed --class=AdminSeeder
+php artisan db:seed --class=AdminSeeder   # si no defines ADMIN_PASSWORD, muestra una clave aleatoria UNA vez
 
 # 6. Instalar y compilar assets
 npm install
@@ -211,12 +216,23 @@ git pull origin main
 composer install --optimize-autoloader --no-dev
 npm install && npm run build
 php artisan migrate --force
-php artisan db:seed --class=AdminSeeder
 php artisan optimize:clear
 php artisan config:cache && php artisan route:cache && php artisan view:cache
 
 sudo chown -R www-data:www-data storage bootstrap/cache
 sudo chmod -R 775 storage bootstrap/cache
+```
+
+> El `AdminSeeder` solo se ejecuta en la **primera** instalación. Es idempotente (no pisa la contraseña de un usuario que ya existe), pero ya no forma parte de cada despliegue.
+
+### Producción: ajustes obligatorios en `.env`
+
+```dotenv
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://tu-dominio
+MAIL_MAILER=smtp            # con MAIL_HOST / MAIL_USERNAME / MAIL_PASSWORD reales
+BIENESTAR_EMAIL=bienestar@tu-centro.edu.co
 ```
 
 ### SSL Gratuito con Certbot (HTTPS)
@@ -227,14 +243,28 @@ sudo certbot --nginx -d juicios-evaluativos.tudominio.com
 
 ---
 
-## 🔑 Credenciales por Defecto
+## 🔑 Primer acceso y contraseñas
 
-> ⚠️ **Cambia la contraseña después del primer acceso en producción.**
+El sistema **ya no trae una contraseña por defecto**. `AdminSeeder` crea el administrador (`ADMIN_EMAIL`, por defecto `admin@sena.edu.co`) con la clave de `ADMIN_PASSWORD`, o con una aleatoria que se muestra una sola vez.
 
-| Campo | Valor |
-|-------|-------|
-| **Email** | `admin@sena.edu.co` |
-| **Contraseña** | `Sena2026*` |
+Para cambiar una contraseña (por ejemplo, la antigua `Sena2026*` si tu instalación es anterior a este cambio):
+
+```bash
+php artisan sena:cambiar-clave admin@sena.edu.co
+```
+
+> ⚠️ Si tu instalación se creó con la contraseña publicada anteriormente en este README, **cámbiala ahora**.
+
+El login bloquea temporalmente tras varios intentos fallidos (`config/sena.php`).
+
+### Comandos útiles
+
+| Comando | Para qué sirve |
+|---|---|
+| `php artisan sena:cambiar-clave {email}` | Cambia una contraseña sin dejarla en el historial del shell |
+| `php artisan sena:reporte-general` | Resumen estadístico en consola |
+| `php artisan sena:detectar-duplicados` | Revisa inconsistencias de datos |
+| `php artisan sena:limpiar-funcionarios [--aplicar]` | Elimina funcionarios inválidos creados por el importador anterior (simulación por defecto) |
 
 ---
 
@@ -255,8 +285,11 @@ sudo certbot --nginx -d juicios-evaluativos.tudominio.com
 │   │   ├── Remision.php
 │   │   └── ...
 │   ├── Exports/AprendicesExport.php
-│   ├── Imports/AprendicesImport.php
+│   ├── Imports/ReporteSofiaImport.php
+│   ├── Services/            (ImportadorJuiciosService, RiesgoDesercionService)
+│   ├── Support/ReporteSofiaPlus.php   (interpreta el reporte por encabezados)
 │   └── Mail/AlertaBienestarMail.php
+├── config/sena.php          (correo de Bienestar, umbrales de riesgo, login, importación)
 ├── database/
 │   ├── migrations/
 │   └── seeders/AdminSeeder.php
@@ -272,6 +305,22 @@ sudo certbot --nginx -d juicios-evaluativos.tudominio.com
 │   └── emails/
 └── routes/web.php
 ```
+
+---
+
+## 🧪 Pruebas
+
+```bash
+composer test                      # SQLite en memoria (rápido; omite 1 prueba específica de PostgreSQL)
+
+# Contra PostgreSQL (el motor de producción), incluida la prueba del savepoint por fila:
+DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=juicios_test \
+DB_USERNAME=postgres DB_PASSWORD=secreto php artisan test
+```
+
+Los tests generan reportes `.xls` sintéticos con la misma estructura que Sofia Plus (sin datos personales reales). **No subas reportes reales al repositorio**: contienen datos personales de aprendices.
+
+> La zona horaria por defecto es `America/Bogota` (`APP_TIMEZONE`). Los registros creados antes de este cambio se guardaron en UTC.
 
 ---
 
