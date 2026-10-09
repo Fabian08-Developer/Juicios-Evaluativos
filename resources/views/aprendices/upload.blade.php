@@ -140,13 +140,6 @@
                 <i class="fa-solid fa-spinner fa-spin"></i> Esto puede tomar unos segundos según el tamaño del archivo...
             </p>
         </div>
-
-        <div style="margin-top: 1.5rem; padding: 0.85rem 1.1rem; border-radius: 12px; background: rgba(57,169,0,0.06); border: 1px solid rgba(57,169,0,0.2); display: flex; align-items: center; gap: 10px;">
-            <i class="fa-solid fa-shield-check" style="color: var(--primary); font-size: 1.2rem; flex-shrink: 0;"></i>
-            <span style="font-size: 0.78rem; color: #cbd5e1; line-height: 1.4;">
-                <strong style="color: #fff;">Motor de Integridad Activo:</strong> El sistema analizará el contenido del reporte contra la base de datos para detectar novedades y prevenir que calificaciones ya aprobadas se sobrescriban o borren por error.
-            </span>
-        </div>
     </form>
 </div>
 

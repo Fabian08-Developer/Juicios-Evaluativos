@@ -23,9 +23,4 @@ class Ficha extends Model
     {
         return $this->hasMany(Aprendiz::class, 'Id_Ficha', 'Id_Ficha');
     }
-
-    public function importaciones()
-    {
-        return $this->hasMany(Importacion::class, 'id_ficha', 'Id_Ficha')->latest();
-    }
 }

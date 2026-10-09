@@ -15,9 +15,6 @@ use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
-use App\Services\ComparadorImportacionService;
 
 class AprendizController extends Controller
 {
@@ -105,7 +102,6 @@ class AprendizController extends Controller
      */
     public function import(ImportarExcelRequest $request)
     {
-<<<<<<< Updated upstream
         // $request ya está validado (incluida la estructura del Excel).
         $inicio        = now();
         $nombreArchivo = $request->file('archivo_excel')->getClientOriginalName();
@@ -114,65 +110,16 @@ class AprendizController extends Controller
             'nombre_archivo'    => $nombreArchivo,
             'id_ficha'          => $request->Id_Ficha,
             'user_id'           => $request->user()->id,
-=======
-        $archivo       = $request->file('archivo_excel');
-        $nombreArchivo = $archivo->getClientOriginalName();
-
-        // 1. Leer el Excel como array de filas
-        $filas = Excel::toArray(
-            new JuiciosImport(),
-            $archivo
-        )[0] ?? [];
-
-        // 2. Pre-análisis y comparación semántica con el estado actual en BD
-        $comparador = app(ComparadorImportacionService::class);
-        $analisis   = $comparador->analizar($filas, $request->Id_Ficha);
-
-        if (!$analisis['valido']) {
-            return redirect()->back()->with('error', $analisis['error']);
-        }
-
-        // 3. 🚨 Si se detectan regresiones o anomalías que requieren decisión del usuario
-        if ($analisis['tiene_regresiones'] || $analisis['requiere_decision']) {
-            $token = (string) Str::uuid();
-            $ext   = $archivo->getClientOriginalExtension() ?: 'xlsx';
-            $path  = $archivo->storeAs('temp_imports', "{$token}.{$ext}");
-
-            session([
-                "import_{$token}" => [
-                    'token'          => $token,
-                    'path'           => $path,
-                    'nombre_archivo' => $nombreArchivo,
-                    'ficha_manual'   => $request->Id_Ficha,
-                    'analisis'       => $analisis,
-                ]
-            ]);
-
-            return view('aprendices.comparativa-importacion', compact('token', 'nombreArchivo', 'analisis'));
-        }
-
-        // 4. Si es una evolución limpia o primera importación, procesar directamente
-        $inicio = now();
-        $importacion = Importacion::create([
-            'nombre_archivo'    => $nombreArchivo,
-            'id_ficha'          => $request->Id_Ficha ?: $analisis['numero_ficha'],
->>>>>>> Stashed changes
             'duracion_segundos' => 0,
             'estado'            => 'procesando',
         ]);
 
         try {
-<<<<<<< Updated upstream
             $filas = Excel::toArray(new ReporteSofiaImport(), $request->file('archivo_excel'))[0] ?? [];
 
             $resultado = app(ImportadorJuiciosService::class)
                 ->procesarArchivoExcel($filas, $request->Id_Ficha, $importacion);
 
-=======
-            $servicio  = app(\App\Services\ImportadorJuiciosService::class);
-            $resultado = $servicio->procesarArchivoExcel($filas, $request->Id_Ficha, $importacion, 'PRESERVAR_APROBADOS');
-
->>>>>>> Stashed changes
             if ($resultado['procesados'] === 0 && empty($resultado['errores'])) {
                 $importacion->update(['estado' => 'error', 'detalle' => 'El archivo no contiene registros de aprendices para procesar.']);
 
@@ -180,19 +127,12 @@ class AprendizController extends Controller
                     ->with('error', 'El documento no contiene registros válidos de aprendices para procesar. Verifica que sea el reporte de juicios evaluativos de la ficha.');
             }
 
-<<<<<<< Updated upstream
             // Tras importar se aterriza en «qué cambió» frente a la carga anterior.
             $destino = redirect()->route('importaciones.show', $importacion);
 
             if (! empty($resultado['errores'])) {
                 return $destino
                     ->with('warning', $resultado['message'])
-=======
-            $mensaje = $resultado['message'];
-            if (!empty($resultado['errores'])) {
-                return redirect()->route('dashboard')
-                    ->with('warning', $mensaje)
->>>>>>> Stashed changes
                     ->with('warning_errores', $resultado['errores']);
             }
 
@@ -208,82 +148,6 @@ class AprendizController extends Controller
             ]);
 
             return redirect()->back()->with('error', 'Error al procesar el documento: ' . $e->getMessage());
-        }
-    }
-
-    /**
-     * Procesa la confirmación del usuario tras visualizar la pantalla de diagnóstico comparativo.
-     */
-    public function confirmarImportacion(Request $request)
-    {
-        $token  = $request->input('token');
-        $accion = $request->input('accion', 'preservar');
-
-        $sessionKey = "import_{$token}";
-        $data       = session($sessionKey);
-
-        if (!$data || !Storage::exists($data['path'])) {
-            return redirect()->route('aprendices.upload')
-                ->with('error', 'La sesión de importación expiró o el archivo temporal ya no existe. Por favor vuelve a seleccionar el archivo.');
-        }
-
-        // Cancelar y descartar archivo temporal
-        if ($accion === 'cancelar') {
-            Storage::delete($data['path']);
-            session()->forget($sessionKey);
-            return redirect()->route('aprendices.upload')
-                ->with('info', 'Importación cancelada. No se modificó ningún dato en el sistema.');
-        }
-
-        $fullPath = Storage::path($data['path']);
-        $filas = Excel::toArray(
-            new JuiciosImport(),
-            $fullPath
-        )[0] ?? [];
-
-        if ($accion === 'forzar') {
-            $politica = 'FORZAR_SOBRESCRITURA';
-        } elseif ($accion === 'trasladar') {
-            $politica = 'PERMITIR_TRASLADO';
-        } else {
-            $politica = 'PRESERVAR_APROBADOS';
-        }
-
-        $inicio = now();
-        $importacion = Importacion::create([
-            'nombre_archivo'    => $data['nombre_archivo'],
-            'id_ficha'          => $data['ficha_manual'] ?: ($data['analisis']['numero_ficha'] ?? null),
-            'duracion_segundos' => 0,
-            'estado'            => 'procesando',
-        ]);
-
-        try {
-            $servicio  = app(\App\Services\ImportadorJuiciosService::class);
-            $resultado = $servicio->procesarArchivoExcel($filas, $data['ficha_manual'], $importacion, $politica);
-
-            // Limpiar archivo temporal y sesión
-            Storage::delete($data['path']);
-            session()->forget($sessionKey);
-
-            $mensaje = $resultado['message'];
-            if (!empty($resultado['errores'])) {
-                return redirect()->route('dashboard')
-                    ->with('warning', $mensaje)
-                    ->with('warning_errores', $resultado['errores']);
-            }
-
-            return redirect()->route('dashboard')->with('success', $mensaje);
-
-        } catch (\Exception $e) {
-            Log::error('Error fatal al confirmar importación: ' . $e->getMessage());
-            Storage::delete($data['path']);
-            session()->forget($sessionKey);
-            $importacion->update([
-                'estado'            => 'error',
-                'duracion_segundos' => now()->diffInSeconds($inicio),
-                'detalle'           => $e->getMessage(),
-            ]);
-            return redirect()->route('aprendices.upload')->with('error', 'Error al procesar el documento: ' . $e->getMessage());
         }
     }
 

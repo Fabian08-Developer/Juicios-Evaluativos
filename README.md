@@ -316,5 +316,5 @@ Este proyecto está bajo la Licencia MIT. Consulta el archivo [LICENSE](LICENSE)
 ---
 
 <div align="center">
-  <sub>Desarrollado para el <strong>Servicio Nacional de Aprendizaje — SENA</strong> · Colombia 🇨🇴</sub>
+  <sub>Desarrollado con ❤️ para el <strong>Servicio Nacional de Aprendizaje — SENA</strong> · Colombia 🇨🇴</sub>
 </div>
