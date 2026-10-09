@@ -21,8 +21,8 @@
         </a>
     </div>
     <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <a href="{{ route('aprendices.pdf', $aprendiz->Id_Aprendiz) }}" class="btn" style="background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); font-weight: 800;">
-            <i class="fa-solid fa-file-pdf"></i> Expediente PDF
+        <a href="{{ route('aprendices.pdf', $aprendiz->Id_Aprendiz) }}" class="btn btn-primary" style="font-weight: 700;">
+            <i class="fa-solid fa-file-pdf"></i> Descargar Expediente PDF
         </a>
     </div>
 </div>
@@ -103,7 +103,9 @@
                         <div style="color:#f1f5f9;margin-top:0.2rem;">
                             {{ \App\Models\ImportacionCambio::ETIQUETAS[$c->tipo] ?? $c->tipo }}:
                             <span style="color:var(--text-muted);">
-                                @if($c->valor_anterior && $c->valor_nuevo){{ $c->valor_anterior }} → {{ $c->valor_nuevo }}@else{{ $c->valor_nuevo ?? $c->valor_anterior }}@endif
+                                @if($c->tipo === \App\Models\ImportacionCambio::JUICIO_PROTEGIDO)se conservó {{ $c->valor_anterior }}
+                                @elseif($c->tipo === \App\Models\ImportacionCambio::APRENDIZ_NO_TRASLADADO)sigue en la ficha {{ $c->valor_anterior }}
+                                @elseif($c->valor_anterior && $c->valor_nuevo){{ $c->valor_anterior }} → {{ $c->valor_nuevo }}@else{{ $c->valor_nuevo ?? $c->valor_anterior }}@endif
                                 @if($c->resultado) ({{ $c->resultado->Codigo }})@endif
                             </span>
                         </div>

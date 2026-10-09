@@ -26,6 +26,7 @@
                 <tr style="text-align: left; color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em;">
                     <th style="padding: 1rem;">NÚMERO DE FICHA</th>
                     <th style="padding: 1rem;">PROGRAMA</th>
+                    <th style="padding: 1rem; text-align: center;">APRENDICES</th>
                     <th style="padding: 1rem; text-align: right;">ACCIONES</th>
                 </tr>
             </thead>
@@ -38,6 +39,18 @@
                     <td style="padding: 1.25rem 1rem;">
                         <div style="font-weight: 600; color: #f1f5f9;">{{ $ficha->programa->Nombre ?? 'N/A' }}</div>
                         <div style="font-size: 0.7rem; color: var(--text-muted);">Cod: {{ $ficha->programa->Codigo ?? '---' }}</div>
+                    </td>
+                    <td style="padding: 1.25rem 1rem; text-align: center;">
+                        @if($ficha->aprendices_count > 0)
+                            <a href="{{ route('aprendices.index', ['ficha' => $ficha->Id_Ficha]) }}" title="Ver los aprendices de esta ficha"
+                               style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px; background: rgba(57,169,0,0.12); color: var(--primary); border: 1px solid rgba(57,169,0,0.25); padding: 0.35rem 0.75rem; border-radius: 20px; font-weight: 700; font-size: 0.8rem; white-space: nowrap;">
+                                <i class="fa-solid fa-users"></i> {{ $ficha->aprendices_count }} aprendices
+                            </a>
+                        @else
+                            <span title="Esta ficha no tiene aprendices asignados" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(239,68,68,0.08); color: #fca5a5; border: 1px solid rgba(239,68,68,0.2); padding: 0.35rem 0.75rem; border-radius: 20px; font-weight: 600; font-size: 0.8rem; white-space: nowrap;">
+                                <i class="fa-solid fa-user-slash"></i> 0 aprendices
+                            </span>
+                        @endif
                     </td>
                     <td style="padding: 1.25rem 1rem; text-align: right; border-radius: 0 12px 12px 0;">
                         <div style="display: flex; gap: 0.5rem; justify-content: flex-end;">
@@ -61,7 +74,7 @@
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="3" style="padding: 4rem; text-align: center; color: var(--text-muted);">
+                    <td colspan="4" style="padding: 4rem; text-align: center; color: var(--text-muted);">
                         <i class="fa-solid fa-folder-open" style="font-size: 3rem; margin-bottom: 1rem; display: block; opacity: 0.2;"></i>
                         No hay fichas registradas actualmente.
                     </td>

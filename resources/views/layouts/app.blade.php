@@ -472,10 +472,10 @@
             <a href="{{ route('fichas.index') }}" class="nav-link {{ request()->routeIs('fichas.*') ? 'active' : '' }}">
                 <i class="fa-solid fa-folder-tree"></i> <span>Fichas</span>
             </a>
-            <a href="{{ route('aprendices.index') }}" class="nav-link {{ request()->routeIs('aprendices.index') ? 'active' : '' }}">
+            <a href="{{ route('aprendices.index') }}" class="nav-link {{ request()->routeIs('aprendices.*') && ! request()->routeIs('aprendices.upload', 'aprendices.import*') ? 'active' : '' }}">
                 <i class="fa-solid fa-users"></i> <span>Aprendices</span>
             </a>
-            <a href="{{ route('aprendices.upload') }}" class="nav-link {{ request()->routeIs('aprendices.upload') ? 'active' : '' }}">
+            <a href="{{ route('aprendices.upload') }}" class="nav-link {{ request()->routeIs('aprendices.upload', 'aprendices.import*') ? 'active' : '' }}">
                 <i class="fa-solid fa-cloud-arrow-up"></i> <span>Importar Datos</span>
             </a>
         </div>
@@ -484,6 +484,9 @@
             <div class="nav-label">Reportes</div>
             <a href="{{ route('importaciones.index') }}" class="nav-link {{ request()->routeIs('importaciones.*') ? 'active' : '' }}">
                 <i class="fa-solid fa-clock-rotate-left"></i> <span>Historial</span>
+            </a>
+            <a href="{{ route('juicios.index') }}" class="nav-link {{ request()->routeIs('juicios.*') ? 'active' : '' }}">
+                <i class="fa-solid fa-clipboard-check"></i> <span>Juicios</span>
             </a>
         </div>
 

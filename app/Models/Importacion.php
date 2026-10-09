@@ -33,6 +33,12 @@ class Importacion extends Model
         return $this->hasMany(ImportacionCambio::class);
     }
 
+    /** id_ficha es texto (como se leyó del reporte); Ficha.Id_Ficha es entero. */
+    public function ficha()
+    {
+        return $this->belongsTo(Ficha::class, 'id_ficha', 'Id_Ficha');
+    }
+
     /** Usuario del sistema que subió el reporte. */
     public function usuario()
     {

@@ -16,7 +16,7 @@ class FichaController extends Controller
 
     public function index()
     {
-        $fichas = Ficha::with('programa')->paginate(15);
+        $fichas = Ficha::with('programa')->withCount('aprendices')->orderBy('Id_Ficha')->paginate(15);
         return view('fichas.index', compact('fichas'));
     }
 

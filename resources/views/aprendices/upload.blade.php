@@ -140,6 +140,14 @@
                 <i class="fa-solid fa-spinner fa-spin"></i> Esto puede tomar unos segundos según el tamaño del archivo...
             </p>
         </div>
+
+        <div style="margin-top: 1.5rem; padding: 0.85rem 1.1rem; border-radius: 12px; background: rgba(57,169,0,0.06); border: 1px solid rgba(57,169,0,0.2); display: flex; align-items: center; gap: 10px;">
+            <i class="fa-solid fa-shield-halved" style="color: var(--primary); font-size: 1.2rem; flex-shrink: 0;"></i>
+            <span style="font-size: 0.78rem; color: #cbd5e1; line-height: 1.4;">
+                <strong style="color: #fff;">Motor de Integridad Activo:</strong> el sistema compara el reporte con lo registrado. Si desharía juicios ya aprobados
+                o trae aprendices de otra ficha, no aplica nada y te pregunta qué hacer.
+            </span>
+        </div>
     </form>
 </div>
 

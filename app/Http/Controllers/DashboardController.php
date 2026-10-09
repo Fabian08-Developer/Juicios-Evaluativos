@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Aprendiz;
+use App\Models\Ficha;
 use App\Models\JuicioEvaluativo;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -155,11 +156,26 @@ class DashboardController extends Controller
         ]);
     }
 
-    public function juiciosList()
+    public function juiciosList(Request $request)
     {
-        $juicios = JuicioEvaluativo::with(['aprendiz', 'resultado.competencia', 'funcionario'])
+        // Ficha y búsqueda definen el universo; los indicadores lo resumen y el
+        // filtro de estado solo recorta la tabla.
+        $base = JuicioEvaluativo::query()
+            ->when($request->filled('ficha'), fn ($q) => $q->whereHas('aprendiz', fn ($a) => $a->where('Id_Ficha', $request->integer('ficha'))))
+            ->when($request->filled('buscar'), fn ($q) => $q->whereHas('aprendiz', fn ($a) => $a->buscar((string) $request->buscar)));
+
+        $totalJuicios    = (clone $base)->count();
+        $totalAprobados  = (clone $base)->where('Estado', 1)->count();
+        $totalPendientes = $totalJuicios - $totalAprobados;
+
+        $juicios = $base->with(['aprendiz', 'resultado.competencia', 'funcionario'])
+            ->when(in_array($request->estado, ['0', '1'], true), fn ($q) => $q->where('Estado', (int) $request->estado))
             ->latest('Id_Juicio')
-            ->paginate(20);
-        return view('juicios.index', compact('juicios'));
+            ->paginate(25)
+            ->withQueryString();
+
+        $fichas = Ficha::orderBy('Id_Ficha')->get(['Id_Ficha']);
+
+        return view('juicios.index', compact('juicios', 'totalJuicios', 'totalAprobados', 'totalPendientes', 'fichas'));
     }
 }

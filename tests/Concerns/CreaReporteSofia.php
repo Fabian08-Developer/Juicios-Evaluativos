@@ -85,4 +85,16 @@ trait CreaReporteSofia
 
         return new UploadedFile($ruta, 'Reporte_de_Juicios_Evaluativos.xls', 'application/vnd.ms-excel', null, true);
     }
+
+    /**
+     * Responde la pantalla «Revisa antes de aplicar» a la que redirigió la carga.
+     * $accion: preservar | trasladar | forzar | cancelar
+     */
+    protected function decidir(\Illuminate\Testing\TestResponse $carga, string $accion): \Illuminate\Testing\TestResponse
+    {
+        $url = (string) $carga->headers->get('Location');
+        $this->assertMatchesRegularExpression('#/aprendices/importar/[0-9a-f-]{36}$#', $url, 'la carga debía pedir una decisión');
+
+        return $this->post($url, ['accion' => $accion]);
+    }
 }

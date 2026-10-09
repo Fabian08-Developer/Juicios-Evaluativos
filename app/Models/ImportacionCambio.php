@@ -16,16 +16,21 @@ class ImportacionCambio extends Model
     public const APRENDIZ_ESTADO  = 'aprendiz_estado';   // p. ej. EN FORMACION → RETIRO VOLUNTARIO
     public const APRENDIZ_MOVIDO  = 'aprendiz_movido';   // venía de otra ficha
     public const APRENDIZ_AUSENTE = 'aprendiz_ausente';  // estaba en la ficha y no vino en el reporte
+    // Solo al importar conservando aprobados / sin trasladar (decisión del usuario):
+    public const JUICIO_PROTEGIDO        = 'juicio_protegido';         // el reporte lo traía POR EVALUAR; se conservó APROBADO
+    public const APRENDIZ_NO_TRASLADADO  = 'aprendiz_no_trasladado';   // es de otra ficha y se dejó en ella
 
     /** Etiqueta legible de cada tipo, en el orden en que se muestran. */
     public const ETIQUETAS = [
-        self::JUICIO_APROBADO  => 'Nuevos aprobados',
-        self::JUICIO_REVERTIDO => 'Aprobaciones revertidas',
-        self::APRENDIZ_ESTADO  => 'Cambios de estado',
-        self::APRENDIZ_NUEVO   => 'Aprendices nuevos',
-        self::APRENDIZ_AUSENTE => 'Aprendices ausentes',
-        self::APRENDIZ_MOVIDO  => 'Aprendices movidos de ficha',
-        self::JUICIO_NUEVO     => 'RAP nuevos',
+        self::JUICIO_APROBADO        => 'Nuevos aprobados',
+        self::JUICIO_REVERTIDO       => 'Aprobaciones revertidas',
+        self::JUICIO_PROTEGIDO       => 'Aprobados protegidos',
+        self::APRENDIZ_ESTADO        => 'Cambios de estado',
+        self::APRENDIZ_NUEVO         => 'Aprendices nuevos',
+        self::APRENDIZ_AUSENTE       => 'Aprendices ausentes',
+        self::APRENDIZ_MOVIDO        => 'Aprendices movidos de ficha',
+        self::APRENDIZ_NO_TRASLADADO => 'Aprendices no trasladados',
+        self::JUICIO_NUEVO           => 'RAP nuevos',
     ];
 
     protected $table = 'importacion_cambios';

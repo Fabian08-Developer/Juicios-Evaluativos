@@ -55,12 +55,19 @@ El sistema permite importar los reportes de juicios evaluativos exportados de So
 - Solo el texto exacto `APROBADO` cuenta como aprobado; `POR EVALUAR` y `NO APROBADO` quedan pendientes. Cualquier otro valor se avisa.
 - Si seleccionas una ficha y el archivo es de otra, la importación se **rechaza** (no se importa en silencio a la ficha equivocada).
 - Cada fila se procesa en un *savepoint*: una fila con error se omite y se reporta, sin perder las demás.
-- Sofia Plus es la única fuente de los juicios: cada reporte nuevo reemplaza el estado anterior de la ficha.
+- Sofia Plus es la única fuente de los juicios: cada reporte nuevo reemplaza el estado anterior de la ficha, salvo lo que requiere tu decisión (ver *Revisión antes de aplicar*).
 - Reporte detallado de juicios importados, aprendices, filas omitidas y advertencias; historial completo en *Historial de importaciones*.
 
 ### 🕒 Historial entre Reportes
 - Cada vez que subes un reporte, el sistema compara con la **carga anterior de la ficha** y te lleva directo a **«qué cambió»**: nuevos aprobados (quién avanzó y en qué RAP), aprobaciones revertidas, cambios de estado (p. ej. retiros), aprendices nuevos, ausentes o movidos de ficha.
-- **Aviso de reporte más antiguo**: si un reporte revierte aprobaciones (por ejemplo, subiste uno viejo por error), se advierte y se listan los juicios afectados.
+- **Revisión antes de aplicar**: si el reporte desharía juicios ya aprobados (por ejemplo, subiste uno viejo por error) o trae aprendices que hoy están en otra ficha, **no se aplica nada** y se muestran los afectados para que elijas:
+  - *Conservar los aprobados* (recomendado): se aplica el resto del reporte sin tocar lo aprobado y sin sacar a nadie de su ficha.
+  - *Trasladar a la ficha del reporte*: mueve a esos aprendices, conservando igualmente lo aprobado.
+  - *Aplicar tal cual*: el reporte manda en todo.
+  - *Cancelar*: no se modifica ningún dato.
+  La decisión queda registrada en el detalle de la importación (aprobados protegidos, aprendices no trasladados o trasladados).
+- **Comparar dos cargas** de una misma ficha (`Historial → Comparar dos cargas`): las dos fotos, la diferencia y quién avanzó entre ambas (efecto neto).
+- **Historial de importaciones** filtrable por ficha, con indicadores, vista rápida de cada carga y su versión en JSON (`/importaciones/{id}/json`).
 - **Línea de tiempo de la ficha** (`Fichas → Historial`): gráfico de juicios aprobados vs. por evaluar de los aprendices en formación tras cada carga, con el detalle de cada una.
 - **Historial de avance del aprendiz** en su expediente.
 - Queda registrado **quién subió** cada reporte. La primera carga de una ficha es la «carga inicial» (no hay contra qué comparar).
@@ -316,5 +323,5 @@ Este proyecto está bajo la Licencia MIT. Consulta el archivo [LICENSE](LICENSE)
 ---
 
 <div align="center">
-  <sub>Desarrollado con ❤️ para el <strong>Servicio Nacional de Aprendizaje — SENA</strong> · Colombia 🇨🇴</sub>
+  <sub>Desarrollado para el <strong>Servicio Nacional de Aprendizaje — SENA</strong> · Colombia 🇨🇴</sub>
 </div>

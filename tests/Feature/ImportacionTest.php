@@ -149,7 +149,8 @@ class ImportacionTest extends TestCase
         $this->importar([$aprobado]);
         $this->assertSame(1, (int) JuicioEvaluativo::first()->Estado);
 
-        $this->importar([$this->fila(['juicio' => 'POR EVALUAR'])]);
+        // Desaprobar pide decisión; con «aplicar tal cual» el reporte manda.
+        $this->decidir($this->importar([$this->fila(['juicio' => 'POR EVALUAR'])]), 'forzar');
 
         $juicio = JuicioEvaluativo::first();
         $this->assertSame(0, (int) $juicio->Estado, 'el Excel más reciente reemplaza al anterior');
@@ -164,20 +165,21 @@ class ImportacionTest extends TestCase
         $user = User::factory()->create();
         JuicioEvaluativo::query()->update(['Estado' => 1, 'registrado_por' => $user->id]);
 
-        $this->importar([$this->fila(['juicio' => 'POR EVALUAR'])]);
+        $this->decidir($this->importar([$this->fila(['juicio' => 'POR EVALUAR'])]), 'forzar');
 
         $juicio = JuicioEvaluativo::first();
         $this->assertSame(0, (int) $juicio->Estado, 'la aprobación manual antigua ya no se conserva');
         $this->assertNull($juicio->registrado_por);
     }
 
-    public function test_un_aprendiz_que_aparece_en_otra_ficha_se_mueve_y_se_avisa(): void
+    public function test_un_aprendiz_que_aparece_en_otra_ficha_pide_decision_y_se_traslada(): void
     {
         $this->importar([$this->fila(['doc' => '1000000001'])], ['ficha' => '3142784']);
-        $respuesta = $this->importar([$this->fila(['doc' => '1000000001'])], ['ficha' => '2828282']);
+        $carga = $this->importar([$this->fila(['doc' => '1000000001'])], ['ficha' => '2828282']);
 
-        $respuesta->assertSessionHas('warning');
-        $this->assertStringContainsString('otra ficha', session('warning'));
+        $this->assertSame(3142784, (int) Aprendiz::first()->Id_Ficha, 'no se mueve sin decisión');
+        $this->decidir($carga, 'trasladar')->assertSessionHas('success');
+        $this->assertStringContainsString('se trasladaron', session('success'));
         $this->assertSame(2828282, (int) Aprendiz::first()->Id_Ficha);
         $this->assertSame(1, JuicioEvaluativo::count(), 'el historial de juicios se conserva');
     }
