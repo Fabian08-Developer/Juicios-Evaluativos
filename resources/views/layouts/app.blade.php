@@ -472,7 +472,7 @@
             <a href="{{ route('fichas.index') }}" class="nav-link {{ request()->routeIs('fichas.*') ? 'active' : '' }}">
                 <i class="fa-solid fa-folder-tree"></i> <span>Fichas</span>
             </a>
-            <a href="{{ route('aprendices.index') }}" class="nav-link {{ request()->routeIs('aprendices.index') ? 'active' : '' }}">
+            <a href="{{ route('aprendices.index') }}" class="nav-link {{ request()->routeIs('aprendices.*') ? 'active' : '' }}">
                 <i class="fa-solid fa-users"></i> <span>Aprendices</span>
             </a>
             <a href="{{ route('aprendices.upload') }}" class="nav-link {{ request()->routeIs('aprendices.upload') ? 'active' : '' }}">

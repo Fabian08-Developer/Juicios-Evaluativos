@@ -155,11 +155,40 @@ class DashboardController extends Controller
         ]);
     }
 
-    public function juiciosList()
+    public function juiciosList(Request $request)
     {
+<<<<<<< Updated upstream
         $juicios = JuicioEvaluativo::with(['aprendiz', 'resultado.competencia', 'funcionario'])
             ->latest('Id_Juicio')
             ->paginate(20);
         return view('juicios.index', compact('juicios'));
+=======
+        $query = JuicioEvaluativo::with(['aprendiz.ficha', 'resultado.competencia', 'funcionario']);
+
+        if ($request->filled('estado')) {
+            $query->where('Estado', (int) $request->estado);
+        }
+
+        if ($request->filled('ficha')) {
+            $query->whereHas('aprendiz', fn($q) => $q->where('Id_Ficha', $request->ficha));
+        }
+
+        if ($request->filled('buscar')) {
+            $buscar = trim($request->buscar);
+            $query->whereHas('aprendiz', function ($q) use ($buscar) {
+                $q->where('Nombre', 'ilike', "%{$buscar}%")
+                  ->orWhere('Apellido', 'ilike', "%{$buscar}%")
+                  ->orWhere('Documento', 'ilike', "%{$buscar}%");
+            });
+        }
+
+        $juicios = $query->orderBy('Id_Juicio', 'desc')->paginate(25)->withQueryString();
+        $totalJuicios = JuicioEvaluativo::count();
+        $totalAprobados = JuicioEvaluativo::where('Estado', 1)->count();
+        $totalPendientes = JuicioEvaluativo::where('Estado', 0)->count();
+        $fichas = \App\Models\Ficha::orderBy('Id_Ficha')->get();
+
+        return view('juicios.index', compact('juicios', 'totalJuicios', 'totalAprobados', 'totalPendientes', 'fichas'));
+>>>>>>> Stashed changes
     }
 }
