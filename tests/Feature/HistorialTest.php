@@ -137,17 +137,20 @@ class HistorialTest extends TestCase
         $this->assertNotNull(Aprendiz::where('Documento', self::B)->first(), 'un ausente no se borra');
     }
 
-    public function test_un_reporte_mas_antiguo_revierte_y_avisa(): void
+    public function test_un_reporte_mas_antiguo_aplicado_tal_cual_registra_los_revertidos(): void
     {
         $this->importar($this->filas([self::A . ':593147']));
         $this->importar($this->filas([self::A . ':593147', self::A . ':593148']));
-        $this->importar($this->filas([self::A . ':593147']));   // el reporte viejo otra vez
+        $carga = $this->importar($this->filas([self::A . ':593147']));   // el reporte viejo otra vez
+
+        $this->decidir($carga, 'forzar');
 
         $this->assertCount(1, $this->cambios(ImportacionCambio::JUICIO_REVERTIDO));
-        $this->assertStringContainsString('más antiguo', session('warning'));
+        $this->assertSame('forzar', $this->ultima()->resumen['politica']);
+        $this->assertStringContainsString('1 revertidos', session('success'));
 
         $this->actingAs($this->user)->get(route('importaciones.show', $this->ultima()))
-            ->assertOk()->assertSee('Aprobaciones revertidas');
+            ->assertOk()->assertSee('Aprobaciones revertidas')->assertSee('aplicar el reporte tal cual');
     }
 
     public function test_el_mismo_reporte_dos_veces_no_tiene_cambios(): void
@@ -167,12 +170,13 @@ class HistorialTest extends TestCase
     public function test_un_aprendiz_movido_de_ficha_se_registra_incluso_en_la_carga_inicial(): void
     {
         $this->importar($this->filas([], [], [self::A]), ['ficha' => '3142784']);
-        $this->importar($this->filas([], [], [self::A]), ['ficha' => '2828282']);
+        $this->decidir($this->importar($this->filas([], [], [self::A]), ['ficha' => '2828282']), 'trasladar');
 
         $movidos = $this->cambios(ImportacionCambio::APRENDIZ_MOVIDO);
         $this->assertCount(1, $movidos);
         $this->assertSame(['3142784', '2828282'], [$movidos->first()->valor_anterior, $movidos->first()->valor_nuevo]);
-        $this->assertStringContainsString('otra ficha', session('warning'));
+        $this->assertTrue($this->ultima()->resumen['carga_inicial']);
+        $this->assertStringContainsString('se trasladaron', session('success'));
     }
 
     public function test_linea_de_tiempo_de_la_ficha_historial_y_expediente(): void
@@ -230,6 +234,84 @@ class HistorialTest extends TestCase
         $aprobados = $this->cambios(ImportacionCambio::JUICIO_APROBADO);
         $this->assertSame([self::B], $aprobados->map(fn ($c) => $c->aprendiz->Documento)->unique()->values()->all());
         $this->assertCount(0, $this->cambios(ImportacionCambio::APRENDIZ_AUSENTE), 'A vino en el archivo: no es ausente');
+    }
+
+    public function test_comparar_dos_cargas_muestra_el_avance_neto(): void
+    {
+        $this->importar($this->filas());
+        $primera = $this->ultima();
+        $this->importar($this->filas([self::A . ':593147', self::B . ':593148']));
+        // B pierde su aprobado (aplicado tal cual) y A aprueba otro RAP.
+        $this->decidir($this->importar($this->filas([self::A . ':593147', self::A . ':593148'])), 'forzar');
+        $ultima = $this->ultima();
+
+        // El orden de los parámetros no importa: siempre de la más antigua a la más reciente.
+        $r = $this->actingAs($this->user)->get(route('importaciones.comparar', ['id_inicial' => $ultima->id, 'id_final' => $primera->id]));
+
+        $r->assertOk()->assertSee('Avance de la ficha 3142784')->assertSee('APRENDIZ 1');
+        $this->assertTrue($r->viewData('a')->is($primera));
+        $this->assertSame(2, $r->viewData('delta')['aprobados']);
+        $this->assertCount(2, $r->viewData('tramo'));
+        $this->assertSame(3, $r->viewData('conteo')[ImportacionCambio::JUICIO_APROBADO]);
+        $this->assertSame(1, $r->viewData('conteo')[ImportacionCambio::JUICIO_REVERTIDO]);
+
+        // B aprobó y luego perdió el mismo RAP: su saldo neto es cero y no aparece.
+        $porAprendiz = $r->viewData('porAprendiz');
+        $this->assertCount(1, $porAprendiz);
+        $this->assertSame(self::A, $porAprendiz[0]['aprendiz']->Documento);
+        $this->assertSame(2, $porAprendiz[0]['avances']);
+    }
+
+    public function test_comparar_exige_dos_cargas_distintas_de_la_misma_ficha(): void
+    {
+        $this->importar($this->filas());
+        $a = $this->ultima();
+        $this->importar($this->filas([], [], [self::C]), ['ficha' => '2828282']);
+        $otra = $this->ultima();
+
+        $this->actingAs($this->user)->get(route('importaciones.comparar', ['id_inicial' => $a->id, 'id_final' => $a->id]))
+            ->assertRedirect(route('importaciones.index'))->assertSessionHas('error');
+        $this->actingAs($this->user)->get(route('importaciones.comparar', ['id_inicial' => $a->id, 'id_final' => $otra->id]))
+            ->assertSessionHas('error', 'Solo se pueden comparar cargas de la misma ficha.');
+        $this->actingAs($this->user)->get(route('importaciones.comparar', ['id_inicial' => 'x', 'id_final' => 999]))
+            ->assertSessionHas('error');
+    }
+
+    public function test_indice_filtra_por_ficha_y_ofrece_el_comparador(): void
+    {
+        $this->importar($this->filas());
+        $this->importar($this->filas([self::A . ':593147']));
+        $this->importar($this->filas([], [], [self::C]), ['ficha' => '2828282']);
+
+        $todas = $this->actingAs($this->user)->get(route('importaciones.index'));
+        $todas->assertOk()->assertSee('Comparar dos cargas')->assertSee('Ficha 2828282');
+        $this->assertSame(3, $todas->viewData('totalImportaciones'));
+        $this->assertSame(100.0, $todas->viewData('tasaExito'));
+        $this->assertEquals([3142784], $todas->viewData('comparables')->keys()->all(), 'solo fichas con 2+ cargas');
+
+        $filtrada = $this->actingAs($this->user)->get(route('importaciones.index', ['ficha' => 2828282]));
+        $this->assertSame(1, $filtrada->viewData('totalImportaciones'));
+        $this->assertCount(1, $filtrada->viewData('importaciones'));
+        $filtrada->assertDontSee('Comparar dos cargas');
+    }
+
+    public function test_json_de_una_importacion(): void
+    {
+        $this->importar($this->filas([self::A . ':593147']));
+        $imp = $this->ultima();
+
+        $this->actingAs($this->user)->getJson(route('importaciones.json', $imp))
+            ->assertOk()
+            ->assertJsonPath('id', $imp->id)
+            ->assertJsonPath('id_ficha', '3142784')
+            ->assertJsonPath('programa', 'ANALISIS Y DESARROLLO DE SOFTWARE.')
+            ->assertJsonPath('subido_por', $this->user->name)
+            ->assertJsonPath('resumen.aprobados_en_formacion', 1)
+            ->assertJsonPath('url', route('importaciones.show', $imp));
+
+        $this->actingAs($this->user)->getJson(route('importaciones.json', 999999))->assertNotFound();
+        auth()->logout();
+        $this->get(route('importaciones.json', $imp))->assertRedirect(route('login'));
     }
 
     private function otraFicha(): int

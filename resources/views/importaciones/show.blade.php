@@ -14,8 +14,14 @@
         [C::APRENDIZ_NUEVO,   'fa-user-plus',           '#0ea5e9', 'rgba(14,165,233,0.1)', ''],
         [C::APRENDIZ_AUSENTE, 'fa-user-slash',          '#94a3b8', 'rgba(148,163,184,0.1)', ''],
     ];
-    $deAprendices = collect([C::APRENDIZ_ESTADO, C::APRENDIZ_NUEVO, C::APRENDIZ_AUSENTE, C::APRENDIZ_MOVIDO])
+    $deAprendices = collect([C::APRENDIZ_ESTADO, C::APRENDIZ_NUEVO, C::APRENDIZ_AUSENTE, C::APRENDIZ_MOVIDO, C::APRENDIZ_NO_TRASLADADO])
         ->flatMap(fn ($t) => $cambios->get($t, collect()));
+    // Decisión tomada en la pantalla «Revisa antes de aplicar» (sin decisión: 'consultar').
+    $decision = [
+        'preservar' => 'conservar los aprobados y dejar a cada aprendiz en su ficha',
+        'trasladar' => 'trasladar a esta ficha conservando los aprobados',
+        'forzar'    => 'aplicar el reporte tal cual',
+    ][$resumen['politica'] ?? ''] ?? null;
 @endphp
 
 @section('content')
@@ -72,6 +78,20 @@
         </div>
     @endif
 
+    @if($decision)
+        <div class="card" style="padding: 1.1rem 1.5rem; margin-bottom: 2rem; border: 1px solid rgba(245,158,11,0.3); background: rgba(245,158,11,0.05);">
+            <strong style="color: #fcd34d;"><i class="fa-solid fa-scale-balanced"></i> Aplicado con tu decisión: {{ $decision }}.</strong>
+            <span style="color: var(--text-muted); font-size: 0.88rem;">
+                {{ collect([
+                    $importacion->conteoCambios(C::JUICIO_PROTEGIDO) ? $importacion->conteoCambios(C::JUICIO_PROTEGIDO) . ' aprobado(s) protegido(s)' : null,
+                    $importacion->conteoCambios(C::APRENDIZ_NO_TRASLADADO) ? $importacion->conteoCambios(C::APRENDIZ_NO_TRASLADADO) . ' aprendiz(es) no trasladado(s)' : null,
+                    $importacion->conteoCambios(C::APRENDIZ_MOVIDO) ? $importacion->conteoCambios(C::APRENDIZ_MOVIDO) . ' trasladado(s) a esta ficha' : null,
+                    $importacion->conteoCambios(C::JUICIO_REVERTIDO) ? $importacion->conteoCambios(C::JUICIO_REVERTIDO) . ' aprobación(es) revertida(s)' : null,
+                ])->filter()->implode(' · ') }}
+            </span>
+        </div>
+    @endif
+
     @if(! $cargaInicial)
     <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1.25rem; margin-bottom: 2rem;">
         @foreach($tarjetas as [$tipo, $icono, $color, $fondo, $prefijo])
@@ -106,6 +126,27 @@
                     </tr>
                 @endforeach
             </table>
+        </div>
+    @endif
+
+    @if($importacion->conteoCambios(C::JUICIO_PROTEGIDO) > 0)
+        <div class="card" style="padding: 1.5rem; margin-bottom: 2rem; border: 1px solid rgba(14,165,233,0.3); background: rgba(14,165,233,0.04);">
+            <h3 style="margin: 0 0 0.5rem; color: #7dd3fc; font-size: 1.05rem;">
+                <i class="fa-solid fa-shield-halved"></i> Aprobados protegidos
+            </h3>
+            <p style="margin: 0 0 1rem; color: var(--text-muted); font-size: 0.85rem;">
+                El reporte traía estos juicios POR EVALUAR; por tu decisión se conservaron APROBADOS.
+            </p>
+            <div style="max-height: 320px; overflow-y: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+                    @foreach($cambios->get(C::JUICIO_PROTEGIDO) as $c)
+                        <tr style="border-top: 1px solid rgba(255,255,255,0.05);">
+                            <td style="padding: 0.5rem 0;">{{ $c->aprendiz?->nombre_completo ?? '—' }}</td>
+                            <td style="padding: 0.5rem 0; color: var(--text-muted);">{{ $c->resultado->Codigo ?? '—' }} · {{ \Illuminate\Support\Str::limit($c->resultado->Nombre ?? '', 70) }}</td>
+                        </tr>
+                    @endforeach
+                </table>
+            </div>
         </div>
     @endif
 
@@ -182,10 +223,13 @@
                                 C::APRENDIZ_NUEVO   => 'Nuevo en la ficha',
                                 C::APRENDIZ_AUSENTE => 'No vino en el reporte',
                                 C::APRENDIZ_MOVIDO  => 'Llegó de otra ficha',
+                                C::APRENDIZ_NO_TRASLADADO => 'Se dejó en su ficha',
                             ][$c->tipo] ?? $c->tipo }}</td>
                             <td style="text-align: right;">
                                 @if($c->tipo === C::APRENDIZ_MOVIDO)
                                     Ficha {{ $c->valor_anterior }} → {{ $c->valor_nuevo }}
+                                @elseif($c->tipo === C::APRENDIZ_NO_TRASLADADO)
+                                    Sigue en la ficha {{ $c->valor_anterior }}
                                 @elseif($c->tipo === C::APRENDIZ_AUSENTE)
                                     Estaba {{ $c->valor_anterior }}
                                 @elseif($c->valor_anterior)

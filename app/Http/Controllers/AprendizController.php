@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\AprendicesExport;
+use App\Exceptions\ImportacionRequiereDecision;
 use App\Http\Requests\ImportarExcelRequest;
 use App\Imports\ReporteSofiaImport;
 use App\Services\ImportadorJuiciosService;
@@ -15,9 +16,16 @@ use Illuminate\Http\Request;
 use Maatwebsite\Excel\Facades\Excel;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class AprendizController extends Controller
 {
+    /** Reportes que esperan la decisión del usuario (disco local, privado). */
+    private const CARPETA_PENDIENTES = 'importaciones-pendientes';
+    /** Clave de sesión: token => archivo, ficha elegida y análisis para decidir. */
+    private const SESION_PENDIENTES = 'importacion_pendiente';
+
     public function index(Request $request)
     {
         $query = Aprendiz::with(['ficha.programa']);
@@ -94,36 +102,130 @@ class AprendizController extends Controller
     }
 
     /**
-     * MEJORA TÉCNICA #4 — Usa ImportarExcelRequest en lugar de Request.
-     * La validación (incluyendo ExcelFormatoValido) ya corrió antes de llegar aquí.
+     * Sube el reporte de Sofia Plus. La validación (incluida la estructura del
+     * Excel) ya corrió en ImportarExcelRequest.
      *
-     * MEJORA TÉCNICA #8 — Llama al servicio actualizado con tolerancia a fallos.
-     * Si hay errores por fila, los muestra al usuario como advertencia, no como error fatal.
+     * Si el reporte desharía aprobaciones o trae aprendices que hoy están en otra
+     * ficha, no se aplica nada: el archivo se guarda temporalmente y el usuario
+     * decide cómo aplicarlo (ver decisionImportacion / confirmarImportacion).
      */
     public function import(ImportarExcelRequest $request)
     {
-        // $request ya está validado (incluida la estructura del Excel).
-        $inicio        = now();
-        $nombreArchivo = $request->file('archivo_excel')->getClientOriginalName();
+        $archivo = $request->file('archivo_excel');
+        $nombre  = $archivo->getClientOriginalName();
+
+        try {
+            return $this->importarYRedirigir($archivo, null, $nombre, $request->Id_Ficha, ImportadorJuiciosService::CONSULTAR);
+        } catch (ImportacionRequiereDecision $d) {
+            $this->limpiarPendientesVencidas();
+
+            // La extensión decide qué lector usa PhpSpreadsheet al releer el archivo.
+            $token = (string) Str::uuid();
+            $ext   = strtolower($archivo->getClientOriginalExtension());
+            $ext   = in_array($ext, ['xls', 'xlsx', 'csv'], true) ? $ext : 'xls';
+            $ruta  = $archivo->storeAs(self::CARPETA_PENDIENTES, "{$token}.{$ext}", 'local');
+
+            // De paso se olvidan las decisiones abandonadas cuyo archivo ya se borró.
+            $vigentes = array_filter(session(self::SESION_PENDIENTES, []), fn ($p) => Storage::disk('local')->exists($p['ruta']));
+            $vigentes[$token] = [
+                'ruta'         => $ruta,
+                'nombre'       => $nombre,
+                'ficha_manual' => $request->Id_Ficha,
+                'analisis'     => $d->analisis,
+            ];
+            session([self::SESION_PENDIENTES => $vigentes]);
+
+            return redirect()->route('aprendices.import.decision', $token);
+        }
+    }
+
+    /** Pantalla de decisión de una importación pendiente. */
+    public function decisionImportacion(string $token)
+    {
+        $pendiente = $this->pendiente($token);
+        if (! $pendiente) {
+            return redirect()->route('aprendices.upload')
+                ->with('error', 'La importación pendiente ya no existe (se aplicó, se canceló o expiró). Vuelve a subir el archivo.');
+        }
+
+        return view('aprendices.decision-importacion', [
+            'token'    => $token,
+            'nombre'   => $pendiente['nombre'],
+            'analisis' => $pendiente['analisis'],
+        ]);
+    }
+
+    /** Aplica (o descarta) una importación pendiente con la política elegida. */
+    public function confirmarImportacion(Request $request, string $token)
+    {
+        $acciones = [
+            'preservar' => ImportadorJuiciosService::PRESERVAR_APROBADOS,
+            'trasladar' => ImportadorJuiciosService::PERMITIR_TRASLADO,
+            'forzar'    => ImportadorJuiciosService::FORZAR_SOBRESCRITURA,
+            'cancelar'  => null,
+        ];
+        $request->validate(['accion' => ['required', 'in:' . implode(',', array_keys($acciones))]]);
+
+        $pendiente = $this->pendiente($token);
+        if (! $pendiente) {
+            return redirect()->route('aprendices.upload')
+                ->with('error', 'La importación pendiente ya no existe (se aplicó, se canceló o expiró). Vuelve a subir el archivo.');
+        }
+
+        // Se consume una sola vez, pase lo que pase (también si la importación falla).
+        // Renombrar el archivo es atómico: si llega un segundo envío (doble clic),
+        // ya no lo encuentra y no se aplica dos veces.
+        session()->forget(self::claveSesion($token));
+        $disco   = Storage::disk('local');
+        $enCurso = preg_replace('/(\.\w+)$/', '.aplicando$1', $pendiente['ruta']);
+
+        if (! $disco->move($pendiente['ruta'], $enCurso)) {
+            return redirect()->route('importaciones.index')
+                ->with('warning', 'Esta importación ya se está aplicando o ya se aplicó.');
+        }
+
+        try {
+            if ($request->accion === 'cancelar') {
+                return redirect()->route('aprendices.upload')
+                    ->with('success', "Importación de «{$pendiente['nombre']}» cancelada: no se modificó ningún dato.");
+            }
+
+            return $this->importarYRedirigir(
+                $enCurso, 'local', $pendiente['nombre'], $pendiente['ficha_manual'], $acciones[$request->accion]
+            );
+        } finally {
+            $disco->delete($enCurso);
+        }
+    }
+
+    /**
+     * Importa y redirige al detalle de «qué cambió».
+     *
+     * @param  \Illuminate\Http\UploadedFile|string  $archivo  Archivo subido o ruta dentro de $disco
+     * @throws ImportacionRequiereDecision (solo con la política CONSULTAR)
+     */
+    private function importarYRedirigir($archivo, ?string $disco, string $nombreArchivo, ?string $fichaManual, string $politica)
+    {
+        $inicio = now();
 
         $importacion = Importacion::create([
             'nombre_archivo'    => $nombreArchivo,
-            'id_ficha'          => $request->Id_Ficha,
-            'user_id'           => $request->user()->id,
+            'id_ficha'          => $fichaManual,
+            'user_id'           => auth()->id(),
             'duracion_segundos' => 0,
             'estado'            => 'procesando',
         ]);
 
         try {
-            $filas = Excel::toArray(new ReporteSofiaImport(), $request->file('archivo_excel'))[0] ?? [];
+            $filas = Excel::toArray(new ReporteSofiaImport(), $archivo, $disco)[0] ?? [];
 
             $resultado = app(ImportadorJuiciosService::class)
-                ->procesarArchivoExcel($filas, $request->Id_Ficha, $importacion);
+                ->procesarArchivoExcel($filas, $fichaManual, $importacion, $politica);
 
             if ($resultado['procesados'] === 0 && empty($resultado['errores'])) {
                 $importacion->update(['estado' => 'error', 'detalle' => 'El archivo no contiene registros de aprendices para procesar.']);
 
-                return redirect()->back()
+                return redirect()->route('aprendices.upload')
                     ->with('error', 'El documento no contiene registros válidos de aprendices para procesar. Verifica que sea el reporte de juicios evaluativos de la ficha.');
             }
 
@@ -136,9 +238,12 @@ class AprendizController extends Controller
                     ->with('warning_errores', $resultado['errores']);
             }
 
-            // Advertencias sin errores de fila (p. ej. reporte más antiguo): se muestran como aviso.
             return $destino->with($resultado['advertencias'] ? 'warning' : 'success', $resultado['message']);
 
+        } catch (ImportacionRequiereDecision $d) {
+            // Nada se aplicó: el registro de esta carga se descarta hasta que el usuario decida.
+            $importacion->delete();
+            throw $d;
         } catch (\Throwable $e) {
             Log::error('Error fatal en importación: ' . $e->getMessage());
             $importacion->update([
@@ -147,10 +252,35 @@ class AprendizController extends Controller
                 'detalle'           => $e->getMessage(),
             ]);
 
-            return redirect()->back()->with('error', 'Error al procesar el documento: ' . $e->getMessage());
+            return redirect()->route('aprendices.upload')->with('error', 'Error al procesar el documento: ' . $e->getMessage());
         }
     }
 
+    private static function claveSesion(string $token): string
+    {
+        return self::SESION_PENDIENTES . ".{$token}";
+    }
+
+    /** @return array{ruta:string,nombre:string,ficha_manual:?string,analisis:array}|null */
+    private function pendiente(string $token): ?array
+    {
+        $pendiente = Str::isUuid($token) ? session(self::claveSesion($token)) : null;
+
+        return $pendiente && Storage::disk('local')->exists($pendiente['ruta']) ? $pendiente : null;
+    }
+
+    /** Archivos de decisiones nunca tomadas (sesión cerrada, pestaña abandonada): se borran al día. */
+    private function limpiarPendientesVencidas(): void
+    {
+        $disco  = Storage::disk('local');
+        $limite = now()->subDay()->getTimestamp();
+
+        foreach ($disco->files(self::CARPETA_PENDIENTES) as $f) {
+            if ($disco->lastModified($f) < $limite) {
+                $disco->delete($f);
+            }
+        }
+    }
 
     public function show($id)
     {

@@ -86,6 +86,41 @@ class ConsultasTest extends TestCase
             ->assertSee('JUAN GOMEZ');
     }
 
+    public function test_el_listado_de_juicios_filtra_y_resume(): void
+    {
+        $this->aprendiz('1000000001', 'JUAN', 'GARCIA', 2, 1);
+        $this->aprendiz('1000000002', 'ANA', 'LOPEZ', 0, 3);
+        $otra = Ficha::create(['Id_Ficha' => 3142784, 'Jornada' => 'DIURNA', 'Id_Programa' => $this->ficha->Id_Programa]);
+        $ap = $this->aprendiz('1000000003', 'LUIS', 'DIAZ', 1, 0);
+        $ap->update(['Id_Ficha' => $otra->Id_Ficha]);
+
+        $todos = $this->actingAs($this->user)->get(route('juicios.index'));
+        $todos->assertOk();
+        $this->assertSame([7, 3, 4], [$todos->viewData('totalJuicios'), $todos->viewData('totalAprobados'), $todos->viewData('totalPendientes')]);
+
+        // La búsqueda no distingue mayúsculas; los indicadores siguen a la ficha y la búsqueda.
+        $garcia = $this->actingAs($this->user)->get(route('juicios.index', ['buscar' => 'garcia']));
+        $this->assertSame([3, 2], [$garcia->viewData('totalJuicios'), $garcia->viewData('totalAprobados')]);
+
+        // El estado recorta la tabla pero no los indicadores.
+        $pendientes = $this->actingAs($this->user)->get(route('juicios.index', ['ficha' => 2828282, 'estado' => '0']));
+        $this->assertSame(6, $pendientes->viewData('totalJuicios'));
+        $this->assertSame(4, $pendientes->viewData('juicios')->total());
+        $this->assertTrue($pendientes->viewData('juicios')->every(fn ($j) => (int) $j->Estado === 0));
+        $pendientes->assertDontSee('LUIS');
+    }
+
+    public function test_las_fichas_muestran_cuantos_aprendices_tienen(): void
+    {
+        $this->aprendiz('1000000001', 'A', 'B', 0, 1);
+        $this->aprendiz('1000000002', 'C', 'D', 0, 1);
+        Ficha::create(['Id_Ficha' => 3142784, 'Jornada' => 'DIURNA', 'Id_Programa' => $this->ficha->Id_Programa]);
+
+        $r = $this->actingAs($this->user)->get(route('fichas.index'));
+        $r->assertOk()->assertSee('2 aprendices')->assertSee('0 aprendices')
+            ->assertSee(route('aprendices.index', ['ficha' => 2828282]), false);
+    }
+
     public function test_el_historial_de_importaciones_distingue_advertencias_de_errores(): void
     {
         Importacion::create(['nombre_archivo' => 'a.xls', 'estado' => 'con_advertencias']);

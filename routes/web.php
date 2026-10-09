@@ -26,6 +26,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/aprendices', [AprendizController::class, 'index'])->name('aprendices.index');
     Route::get('/aprendices/cargar', [AprendizController::class, 'showUploadForm'])->name('aprendices.upload');
     Route::post('/aprendices/importar', [AprendizController::class, 'import'])->name('aprendices.import');
+    // Reporte que desharía aprobaciones o trae aprendices de otra ficha: el usuario decide.
+    Route::get('/aprendices/importar/{token}', [AprendizController::class, 'decisionImportacion'])->whereUuid('token')->name('aprendices.import.decision');
+    Route::post('/aprendices/importar/{token}', [AprendizController::class, 'confirmarImportacion'])->whereUuid('token')->name('aprendices.import.confirmar');
     Route::get('/aprendices/exportar-excel', [AprendizController::class, 'exportarExcel'])->name('aprendices.export.excel');
     Route::get('/aprendices/buscar', [AprendizController::class, 'buscarJson'])->name('aprendices.buscar');
     Route::get('/aprendices/{id}', [AprendizController::class, 'show'])->name('aprendices.show');
@@ -40,6 +43,8 @@ Route::middleware('auth')->group(function () {
 
     // Historial de importaciones
     Route::get('/importaciones', [ImportacionController::class, 'index'])->name('importaciones.index');
-    Route::get('/importaciones/{importacion}', [ImportacionController::class, 'show'])->name('importaciones.show');
+    Route::get('/importaciones/comparar', [ImportacionController::class, 'comparar'])->name('importaciones.comparar');
+    Route::get('/importaciones/{importacion}', [ImportacionController::class, 'show'])->whereNumber('importacion')->name('importaciones.show');
+    Route::get('/importaciones/{importacion}/json', [ImportacionController::class, 'showJson'])->whereNumber('importacion')->name('importaciones.json');
 
 });
