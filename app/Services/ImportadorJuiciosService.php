@@ -36,7 +36,6 @@ use Illuminate\Support\Facades\Log;
  */
 class ImportadorJuiciosService
 {
-<<<<<<< Updated upstream
     /** @var array<string,int> código => Id_Competencia */
     private array $cacheCompetencias = [];
     /** @var array<string,int> código => Id_Resultado */
@@ -70,45 +69,21 @@ class ImportadorJuiciosService
      */
     public function procesarArchivoExcel(array $filas, ?string $fichaManual = null, ?Importacion $importacion = null): array
     {
-=======
-    /** Resultado de la última ejecución para acceso externo */
-    public array $erroresPorFila       = [];
-    public int   $procesados           = 0;
-    public int   $nuevosAprobados      = 0;
-    public int   $regresionesProtegidas = 0;
-
-    public function procesarArchivoExcel(
-        array $filas,
-        ?string $fichaManual = null,
-        ?Importacion $importacion = null,
-        string $politica = 'PRESERVAR_APROBADOS'
-    ): array {
->>>>>>> Stashed changes
         $inicio = microtime(true);
         $this->reiniciar();
 
-<<<<<<< Updated upstream
         // ── 1. Interpretar el archivo (sin tocar la base de datos) ────────────
         $reporte = ReporteSofiaPlus::desdeFilas($filas);
         $this->errores = $reporte->errores;
-=======
-        try {
-            Log::info("[Importador] Iniciando con " . count($filas) . " filas. Política: {$politica}");
->>>>>>> Stashed changes
 
         $fichaManual = $fichaManual !== null && trim($fichaManual) !== '' ? trim($fichaManual) : null;
 
-<<<<<<< Updated upstream
         if ($fichaManual && $reporte->ficha && $fichaManual !== $reporte->ficha) {
             throw new \RuntimeException(
                 "El archivo corresponde a la ficha {$reporte->ficha}, pero seleccionaste la ficha {$fichaManual}. " .
                 'Sube el reporte de la ficha correcta o deja el selector en «Autodetectar».'
             );
         }
-=======
-            $denominacion = $denominacion ?: 'PROGRAMA SOFIA PLUS';
-            $numeroFicha  = $fichaManual ?: $numeroFicha;
->>>>>>> Stashed changes
 
         $numeroFicha = $reporte->ficha ?? $fichaManual;
         if (! $numeroFicha) {
@@ -265,104 +240,9 @@ class ImportadorJuiciosService
         ]);
         $this->juiciosDe($aprendiz)->put($resultadoId, $nuevo);
 
-<<<<<<< Updated upstream
         // Un aprendiz nuevo ya queda registrado como tal: no se anota cada uno de sus RAP.
         if (! isset($this->aprendicesNuevos[$aprendiz->Documento])) {
             $this->anotarCambio(ImportacionCambio::JUICIO_NUEVO, $aprendiz, $resultadoId, null, self::etiquetaJuicio($estado));
-=======
-            // ── FASE 3: Localizar fila de inicio de datos ─────────────────────
-            $inicioDatos = $this->encontrarInicioDatos($filas);
-
-            // ── FASE 4: CACHÉS EN MEMORIA (evita N+1 en competencias/instructores)
-            $cacheCompetencias = [];
-            $cacheResultados   = [];
-            $cacheFuncionarios = [];
-
-            // ── FASE 5: PROCESAMIENTO FILA A FILA CON TOLERANCIA A FALLOS ────
-            $this->procesados            = 0;
-            $this->nuevosAprobados       = 0;
-            $this->regresionesProtegidas = 0;
-            $this->erroresPorFila        = [];
-
-            for ($i = $inicioDatos; $i < count($filas); $i++) {
-                $fila = $filas[$i];
-
-                try {
-                    $resultado = $this->procesarFila(
-                        $fila, $i + 1, $ficha,
-                        $cacheCompetencias, $cacheResultados, $cacheFuncionarios,
-                        $politica
-                    );
-
-                    if ($resultado) {
-                        $this->procesados++;
-                    }
-
-                } catch (\Exception $e) {
-                    // ✅ Error tolerado: registrar y continuar con la siguiente fila
-                    $this->erroresPorFila[] = [
-                        'fila'  => $i + 1,
-                        'dato'  => trim((string) ($fila[1] ?? $fila[0] ?? 'N/A')),
-                        'error' => $e->getMessage(),
-                    ];
-                    Log::warning("[Importador] Fila " . ($i + 1) . " omitida: " . $e->getMessage());
-                }
-            }
-
-            DB::commit();
-
-            $duracion = round(microtime(true) - $inicio, 2);
-            Log::info("[Importador] Finalizado. Procesados: {$this->procesados}, Nuevos Aprobados: {$this->nuevosAprobados}, Regresiones Protegidas: {$this->regresionesProtegidas}");
-
-            // ── FASE 6: Actualizar registro de importación ────────────────────
-            $detalle = "Procesados: {$this->procesados}. ";
-            if ($this->nuevosAprobados > 0) {
-                $detalle .= "+{$this->nuevosAprobados} nuevos aprobados. ";
-            }
-            if ($this->regresionesProtegidas > 0) {
-                $detalle .= "🛡️ {$this->regresionesProtegidas} juicios protegidos contra regresión. ";
-            }
-            if (count($this->erroresPorFila) > 0) {
-                $detalle .= count($this->erroresPorFila) . " fila(s) con error.";
-            }
-
-            if ($importacion) {
-                $importacion->update([
-                    'aprendices_procesados' => $this->procesados,
-                    'duracion_segundos'     => (int) $duracion,
-                    'estado'                => count($this->erroresPorFila) === 0 ? 'exitoso' : 'con_advertencias',
-                    'detalle'               => trim($detalle),
-                ]);
-            }
-
-            // ── FASE 7: Disparar Evento (OCP — los Listeners hacen el resto) ──
-            if ($importacion) {
-                ImportacionProcesada::dispatch($importacion, $this->procesados, (string) $ficha->Id_Ficha, $this->erroresPorFila);
-            }
-
-            $mensaje = "Se procesaron {$this->procesados} registros correctamente.";
-            if ($this->nuevosAprobados > 0) {
-                $mensaje .= " (+{$this->nuevosAprobados} nuevos juicios aprobados)";
-            }
-            if ($this->regresionesProtegidas > 0) {
-                $mensaje .= " (🛡️ {$this->regresionesProtegidas} juicios protegidos contra regresión)";
-            }
-
-            return [
-                'status'                => 'success',
-                'message'               => $mensaje,
-                'procesados'            => $this->procesados,
-                'nuevos_aprobados'      => $this->nuevosAprobados,
-                'regresiones_protegidas'=> $this->regresionesProtegidas,
-                'errores'               => $this->erroresPorFila,
-                'detalles'              => ['ficha' => $ficha->Id_Ficha],
-            ];
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error("[Importador] Error fatal: " . $e->getMessage());
-            throw $e;
->>>>>>> Stashed changes
         }
     }
 
@@ -558,30 +438,10 @@ class ImportadorJuiciosService
      * (no hay carga anterior con qué comparar), salvo que sea un aviso que
      * siempre interesa ($siempre), como un aprendiz que llega de otra ficha.
      */
-<<<<<<< Updated upstream
     private function anotarCambio(string $tipo, Aprendiz $aprendiz, ?int $resultadoId, ?string $anterior, ?string $nuevo, bool $siempre = false): void
     {
         if ($this->cargaInicial && ! $siempre) {
             return;
-=======
-    public function procesarFila(
-        array  $fila,
-        int    $numFila,
-        Ficha  $ficha,
-        array  &$cacheCompetencias,
-        array  &$cacheResultados,
-        array  &$cacheFuncionarios,
-        string $politica = 'PRESERVAR_APROBADOS'
-    ): bool {
-        // Detectar documento del aprendiz (columnas 0, 1 o 2)
-        $docAprendiz = null;
-        foreach ([0, 1, 2] as $colIdx) {
-            $val = trim((string) ($fila[$colIdx] ?? ''));
-            if (is_numeric($val) && strlen($val) >= 7) {
-                $docAprendiz = $val;
-                break;
-            }
->>>>>>> Stashed changes
         }
 
         $this->cambiosFila[] = [
@@ -601,45 +461,12 @@ class ImportadorJuiciosService
             return;
         }
 
-<<<<<<< Updated upstream
         // Todos los documentos del archivo, incluidos los de filas con error, para
         // no marcar como ausente a alguien que sí vino.
         $enArchivo = array_values(array_unique(array_merge(
             array_column($reporte->registros, 'documento'),
             array_column($reporte->errores, 'dato')
         )));
-=======
-        // ── Aprendiz con Protección de Pertenencia de Ficha ──────────────
-        $aprendiz = Aprendiz::where('Documento', $docAprendiz)->first();
-
-        if ($aprendiz) {
-            $datosAprendiz = [
-                'Nombre'         => trim((string) ($fila[2] ?? 'N/A')),
-                'Apellido'       => trim((string) ($fila[3] ?? 'N/A')),
-                'Tipo_Documento' => 'CC',
-                'Estado'         => trim((string) ($fila[4] ?? 'EN FORMACION')),
-            ];
-
-            // 🔒 BLOQUEO DE REASIGNACIÓN AUTOMÁTICA:
-            // No vaciar la ficha de origen. Solo cambiar la ficha si el aprendiz no tenía ficha,
-            // o si la política explícitamente autoriza el traslado ('PERMITIR_TRASLADO' o 'FORZAR_SOBRESCRITURA')
-            if (empty($aprendiz->Id_Ficha) || in_array($politica, ['PERMITIR_TRASLADO', 'FORZAR_SOBRESCRITURA'])) {
-                $datosAprendiz['Id_Ficha'] = $ficha->Id_Ficha;
-            }
-
-            $aprendiz->update($datosAprendiz);
-        } else {
-            // Nuevo aprendiz en el sistema: se vincula a la ficha procesada
-            $aprendiz = Aprendiz::create([
-                'Documento'      => $docAprendiz,
-                'Nombre'         => trim((string) ($fila[2] ?? 'N/A')),
-                'Apellido'       => trim((string) ($fila[3] ?? 'N/A')),
-                'Id_Ficha'       => $ficha->Id_Ficha,
-                'Tipo_Documento' => 'CC',
-                'Estado'         => trim((string) ($fila[4] ?? 'EN FORMACION')),
-            ]);
-        }
->>>>>>> Stashed changes
 
         Aprendiz::where('Id_Ficha', $ficha->Id_Ficha)
             ->whereNotIn('Documento', $enArchivo)
@@ -705,7 +532,6 @@ class ImportadorJuiciosService
             isset($c[ImportacionCambio::JUICIO_NUEVO]) ? "{$c[ImportacionCambio::JUICIO_NUEVO]} RAP nuevo(s)" : null,
         ]);
 
-<<<<<<< Updated upstream
         return $partes
             ? 'Frente a la carga anterior: ' . implode(', ', $partes) . '.'
             : 'Sin cambios frente a la carga anterior.';
@@ -720,54 +546,6 @@ class ImportadorJuiciosService
             ->pluck('n', 'Estado')
             ->map(fn ($n) => (int) $n)
             ->all();
-=======
-        // ── Juicio Evaluativo con Protección de Integridad ────────────────
-        $juicioRaw = strtoupper(trim((string) ($fila[7] ?? '')));
-        $estado    = (!str_contains($juicioRaw, 'NO APROB') && !str_contains($juicioRaw, 'POR EVAL') && (str_contains($juicioRaw, 'APROB') || $juicioRaw === 'A' || $juicioRaw === 'S')) ? 1 : 0;
-
-        $idResultado = $cacheResultados[$strRes];
-        $idAprendiz  = $aprendiz->Id_Aprendiz;
-
-        $juicioExistente = JuicioEvaluativo::where('Id_Resultado', $idResultado)
-            ->where('Id_Aprendiz', $idAprendiz)
-            ->first();
-
-        if ($juicioExistente) {
-            // El juicio ya existía previamente en la base de datos
-            if ($juicioExistente->Estado == 1 && $estado == 0 && $politica === 'PRESERVAR_APROBADOS') {
-                // 🛡️ REGLA DE ORO: No degradar de Aprobado a Pendiente
-                $this->regresionesProtegidas++;
-            } elseif ($juicioExistente->Estado == 0 && $estado == 1) {
-                // 🟢 Nuevo avance académico: pasarlo a Aprobado
-                $juicioExistente->update([
-                    'Estado'         => 1,
-                    'Id_Funcionario' => $cacheFuncionarios[$strFunc],
-                    'Fecha'          => now()->format('Y-m-d'),
-                ]);
-                $this->nuevosAprobados++;
-            } elseif ($politica === 'FORZAR_SOBRESCRITURA' && $juicioExistente->Estado != $estado) {
-                // Sobrescritura explícita autorizada por el usuario
-                $juicioExistente->update([
-                    'Estado'         => $estado,
-                    'Id_Funcionario' => $cacheFuncionarios[$strFunc],
-                    'Fecha'          => now()->format('Y-m-d'),
-                ]);
-                if ($estado == 1) $this->nuevosAprobados++;
-            }
-        } else {
-            // Registro nuevo que no existía en el sistema
-            JuicioEvaluativo::create([
-                'Id_Resultado'   => $idResultado,
-                'Id_Aprendiz'    => $idAprendiz,
-                'Estado'         => $estado,
-                'Id_Funcionario' => $cacheFuncionarios[$strFunc],
-                'Fecha'          => now()->format('Y-m-d'),
-            ]);
-            if ($estado == 1) {
-                $this->nuevosAprobados++;
-            }
-        }
->>>>>>> Stashed changes
 
         $j = DB::table('juicios_evaluativos as j')
             ->join('aprendiz as a', 'a.Id_Aprendiz', '=', 'j.Id_Aprendiz')

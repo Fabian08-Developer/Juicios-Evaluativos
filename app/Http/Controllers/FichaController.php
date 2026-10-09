@@ -16,11 +16,7 @@ class FichaController extends Controller
 
     public function index()
     {
-<<<<<<< Updated upstream
         $fichas = Ficha::with('programa')->paginate(15);
-=======
-        $fichas = Ficha::with(['programa', 'competencia'])->withCount('aprendices')->paginate(15);
->>>>>>> Stashed changes
         return view('fichas.index', compact('fichas'));
     }
 

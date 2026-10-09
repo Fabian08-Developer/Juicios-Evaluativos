@@ -21,13 +21,8 @@
         </a>
     </div>
     <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-<<<<<<< Updated upstream
         <a href="{{ route('aprendices.pdf', $aprendiz->Id_Aprendiz) }}" class="btn" style="background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); font-weight: 800;">
             <i class="fa-solid fa-file-pdf"></i> Expediente PDF
-=======
-        <a href="{{ route('aprendices.pdf', $aprendiz->Id_Aprendiz) }}" class="btn btn-primary" style="font-weight: 700;">
-            <i class="fa-solid fa-file-pdf"></i> Descargar Expediente PDF
->>>>>>> Stashed changes
         </a>
     </div>
 </div>

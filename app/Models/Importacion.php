@@ -28,7 +28,6 @@ class Importacion extends Model
         'resumen'    => 'array',
     ];
 
-<<<<<<< Updated upstream
     public function cambios()
     {
         return $this->hasMany(ImportacionCambio::class);
@@ -87,43 +86,5 @@ class Importacion extends Model
                 'label' => '✗ Error',
             ],
         };
-=======
-    public function ficha()
-    {
-        return $this->belongsTo(Ficha::class, 'id_ficha', 'Id_Ficha');
-    }
-
-    /**
-     * Extrae el conteo de nuevos juicios aprobados desde el detalle si existe.
-     */
-    public function getNuevosAprobadosAttribute(): int
-    {
-        if (preg_match('/\+(\d+)\s+nuevos\s+aprobados/i', $this->detalle ?? '', $m)) {
-            return (int) $m[1];
-        }
-        return 0;
-    }
-
-    /**
-     * Extrae el conteo de regresiones protegidas desde el detalle si existe.
-     */
-    public function getRegresionesProtegidasAttribute(): int
-    {
-        if (preg_match('/(\d+)\s+juicios\s+protegidos/i', $this->detalle ?? '', $m)) {
-            return (int) $m[1];
-        }
-        return 0;
-    }
-
-    /**
-     * Calcula la velocidad de procesamiento en registros por segundo.
-     */
-    public function getVelocidadAttribute(): float
-    {
-        if ($this->duracion_segundos > 0 && $this->aprendices_procesados > 0) {
-            return round($this->aprendices_procesados / $this->duracion_segundos, 1);
-        }
-        return (float) $this->aprendices_procesados;
->>>>>>> Stashed changes
     }
 }
