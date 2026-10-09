@@ -481,22 +481,6 @@
         </div>
 
         <div class="nav-group">
-            <div class="nav-label" style="color: #fbbf24;">⚡ Acciones & Innovación</div>
-            <a href="{{ route('acciones.matriz') }}" class="nav-link {{ request()->routeIs('acciones.matriz') ? 'active' : '' }}">
-                <i class="fa-solid fa-table-cells" style="color: var(--primary);"></i> <span>Matriz de Calificación</span>
-            </a>
-            <a href="{{ route('acciones.diagnostico') }}" class="nav-link {{ request()->routeIs('acciones.diagnostico') ? 'active' : '' }}">
-                <i class="fa-solid fa-traffic-light" style="color: #f59e0b;"></i> <span>Semáforo de Deserción</span>
-            </a>
-            <a href="{{ route('acciones.cuellos-botella') }}" class="nav-link {{ request()->routeIs('acciones.cuellos-botella') ? 'active' : '' }}">
-                <i class="fa-solid fa-filter-circle-xmark" style="color: #ef4444;"></i> <span>Cuellos de Botella</span>
-            </a>
-            <a href="{{ route('remisiones.index') }}" class="nav-link {{ request()->routeIs('remisiones.*') ? 'active' : '' }}">
-                <i class="fa-solid fa-bullhorn" style="color: #ef4444;"></i> <span>Remisiones & Alertas</span>
-            </a>
-        </div>
-
-        <div class="nav-group">
             <div class="nav-label">Reportes</div>
             <a href="{{ route('importaciones.index') }}" class="nav-link {{ request()->routeIs('importaciones.*') ? 'active' : '' }}">
                 <i class="fa-solid fa-clock-rotate-left"></i> <span>Historial</span>

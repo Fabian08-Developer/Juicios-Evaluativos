@@ -14,16 +14,46 @@ class Importacion extends Model
     protected $fillable = [
         'nombre_archivo',
         'id_ficha',
+        'user_id',
         'aprendices_procesados',
         'duracion_segundos',
         'estado',
         'detalle',
+        'resumen',
     ];
 
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'resumen'    => 'array',
     ];
+
+    public function cambios()
+    {
+        return $this->hasMany(ImportacionCambio::class);
+    }
+
+    /** Usuario del sistema que subió el reporte. */
+    public function usuario()
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    /** Carga anterior de la misma ficha (la base contra la que se compararon los cambios). */
+    public function anteriorDeLaFicha(): ?self
+    {
+        return self::where('id_ficha', $this->id_ficha)
+            ->whereNotNull('resumen')
+            ->where('id', '<', $this->id)
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /** Cantidad de cambios de un tipo según el resumen guardado. */
+    public function conteoCambios(string $tipo): int
+    {
+        return (int) ($this->resumen['cambios'][$tipo] ?? 0);
+    }
 
     /**
      * Colores y etiqueta del estado para la vista del historial.

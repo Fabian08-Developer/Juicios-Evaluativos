@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Aprendiz;
 use App\Models\Ficha;
 use App\Models\Programa;
-use App\Models\Remision;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -55,7 +54,7 @@ class FichaController extends Controller
         $ficha = Ficha::findOrFail($id);
 
         // El número de ficha es la llave primaria y viene de Sofia Plus: no se edita
-        // (aprendices, remisiones e importaciones dependen de él).
+        // (aprendices e importaciones dependen de él).
         $data = $request->validate([
             'Id_Programa' => 'required|exists:programa,Id_Programa',
             'Jornada'     => 'nullable|string|in:' . implode(',', self::JORNADAS),
@@ -69,17 +68,6 @@ class FichaController extends Controller
     public function destroy($id)
     {
         $ficha = Ficha::findOrFail($id);
-
-        // Las remisiones a Bienestar son registros formales (radicados): borrar los
-        // aprendices las eliminaría en cascada. Se protege en lugar de perderlas.
-        $remisiones = Remision::where('Id_Ficha', $ficha->Id_Ficha)->count();
-        if ($remisiones > 0) {
-            return redirect()->route('fichas.index')->with(
-                'error',
-                "No se puede eliminar la ficha {$ficha->Id_Ficha}: tiene {$remisiones} remisión(es) a Bienestar registradas que se perderían. " .
-                'Cierra esos casos (estado «Cerrado») y conserva la ficha como histórico.'
-            );
-        }
 
         // Todo o nada: si algo falla a mitad, no queda la ficha a medio borrar.
         DB::transaction(function () use ($ficha) {

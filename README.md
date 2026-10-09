@@ -20,7 +20,7 @@
 
 El **Sistema de Juicios Evaluativos SENA** es una plataforma web institucional diseñada para que los instructores del SENA gestionen de manera integral el proceso académico de sus fichas de formación.
 
-El sistema permite importar, visualizar y analizar los juicios evaluativos de los aprendices, identificar riesgos de deserción y emitir alertas formales a Bienestar al Aprendiz / Coordinación Académica.
+El sistema permite importar los reportes de juicios evaluativos exportados de Sofia Plus y consultar, filtrar y exportar la información de los aprendices de cada ficha.
 
 ### 🌐 Acceso en Producción
 
@@ -55,33 +55,15 @@ El sistema permite importar, visualizar y analizar los juicios evaluativos de lo
 - Solo el texto exacto `APROBADO` cuenta como aprobado; `POR EVALUAR` y `NO APROBADO` quedan pendientes. Cualquier otro valor se avisa.
 - Si seleccionas una ficha y el archivo es de otra, la importación se **rechaza** (no se importa en silencio a la ficha equivocada).
 - Cada fila se procesa en un *savepoint*: una fila con error se omite y se reporta, sin perder las demás.
-- Una aprobación hecha a mano en la matriz **no se borra** si el Excel todavía dice `POR EVALUAR` (configurable en `config/sena.php`).
+- Sofia Plus es la única fuente de los juicios: cada reporte nuevo reemplaza el estado anterior de la ficha.
 - Reporte detallado de juicios importados, aprendices, filas omitidas y advertencias; historial completo en *Historial de importaciones*.
 
-### 📊 Matriz Interactiva de Calificación
-- Calificación de juicios evaluativos en tiempo real por aprendiz y competencia.
-- Actualización individual **vía AJAX** (sin recargar la página).
-- **Guardado en lote** de múltiples calificaciones con un solo clic.
-- Filtros por ficha y competencia.
-
-### 🚦 Semáforo Predictivo de Deserción
-- Análisis automático del **score de riesgo** de cada aprendiz basado en juicios pendientes.
-- Clasificación visual: 🔴 **Crítico** · 🟡 **Moderado** · 🟢 **En seguimiento**
-- Selección múltiple de aprendices para emisión de alertas grupales.
-
-### 🔍 Detector de Cuellos de Botella Académicos
-- **Ranking de competencias** con mayor concentración de juicios pendientes en la ficha.
-- Aislamiento del **"Grupo de Refuerzo Pedagógico"** por competencia específica.
-- Contacto directo por **WhatsApp** para citación a refuerzo.
-- Enlace directo a la **Matriz de Calificación** preconfigurada con la competencia crítica.
-
-### 📣 Sistema de Remisiones y Alertas a Bienestar
-- Emisión de **alertas masivas oficiales** a Bienestar al Aprendiz / Coordinación.
-- Registro en base de datos con **número de radicado único** (`REM-YYYY-XXXX`).
-- **Envío de correo electrónico institucional** (`BIENESTAR_EMAIL`) con plantilla HTML oficial; si no está configurado o falla, el sistema lo informa en lugar de aparentar éxito.
-- Generación de **Oficio Institucional de Remisión en PDF** con membrete SENA, listo para radicar.
-- **Bandeja de Remisiones**: historial completo, KPIs de casos, filtros y gestión de estados.
-- Cambio de estado de atención: Pendiente · En Acompañamiento · Atendido · Cerrado.
+### 🕒 Historial entre Reportes
+- Cada vez que subes un reporte, el sistema compara con la **carga anterior de la ficha** y te lleva directo a **«qué cambió»**: nuevos aprobados (quién avanzó y en qué RAP), aprobaciones revertidas, cambios de estado (p. ej. retiros), aprendices nuevos, ausentes o movidos de ficha.
+- **Aviso de reporte más antiguo**: si un reporte revierte aprobaciones (por ejemplo, subiste uno viejo por error), se advierte y se listan los juicios afectados.
+- **Línea de tiempo de la ficha** (`Fichas → Historial`): gráfico de juicios aprobados vs. por evaluar de los aprendices en formación tras cada carga, con el detalle de cada una.
+- **Historial de avance del aprendiz** en su expediente.
+- Queda registrado **quién subió** cada reporte. La primera carga de una ficha es la «carga inicial» (no hay contra qué comparar).
 
 ### 🔐 Sistema de Autenticación
 - Login seguro con diseño **split-screen glassmorphism** y foto institucional del campus SENA.
@@ -119,8 +101,9 @@ programa            → Programas de formación SENA
 competencia         → Competencias por programa
 resultados          → Resultados de aprendizaje por competencia
 juicios_evaluativos → Calificaciones (APROBADO / PENDIENTE / etc.)
-importaciones       → Historial de cargas masivas
-remisiones          → Casos reportados a Bienestar
+importaciones       → Historial de cargas masivas (quién subió y foto de la ficha tras cada carga)
+importacion_cambios → Qué cambió en cada carga frente a la anterior
+remisiones          → (histórica, sin uso: el módulo de remisiones se retiró)
 users               → Usuarios administradores del sistema
 ```
 
@@ -157,7 +140,7 @@ php artisan key:generate
 # DB_PASSWORD=tu_contraseña
 
 # 5. Ejecutar migraciones y crear el administrador
-#    (opcional: define ADMIN_EMAIL / ADMIN_PASSWORD / BIENESTAR_EMAIL en .env antes)
+#    (opcional: define ADMIN_EMAIL / ADMIN_PASSWORD en .env antes)
 php artisan migrate --force
 php artisan db:seed --class=AdminSeeder   # si no defines ADMIN_PASSWORD, muestra una clave aleatoria UNA vez
 
@@ -231,8 +214,6 @@ sudo chmod -R 775 storage bootstrap/cache
 APP_ENV=production
 APP_DEBUG=false
 APP_URL=https://tu-dominio
-MAIL_MAILER=smtp            # con MAIL_HOST / MAIL_USERNAME / MAIL_PASSWORD reales
-BIENESTAR_EMAIL=bienestar@tu-centro.edu.co
 ```
 
 ### SSL Gratuito con Certbot (HTTPS)
@@ -277,19 +258,16 @@ El login bloquea temporalmente tras varios intentos fallidos (`config/sena.php`)
 │   │   ├── AprendizController.php
 │   │   ├── DashboardController.php
 │   │   ├── FichaController.php
-│   │   ├── ImportacionController.php
-│   │   └── InnovacionAcademicaController.php
+│   │   └── ImportacionController.php
 │   ├── Models/
 │   │   ├── Aprendiz.php
 │   │   ├── Ficha.php
-│   │   ├── Remision.php
 │   │   └── ...
 │   ├── Exports/AprendicesExport.php
 │   ├── Imports/ReporteSofiaImport.php
-│   ├── Services/            (ImportadorJuiciosService, RiesgoDesercionService)
-│   ├── Support/ReporteSofiaPlus.php   (interpreta el reporte por encabezados)
-│   └── Mail/AlertaBienestarMail.php
-├── config/sena.php          (correo de Bienestar, umbrales de riesgo, login, importación)
+│   ├── Services/ImportadorJuiciosService.php
+│   └── Support/ReporteSofiaPlus.php   (interpreta el reporte por encabezados)
+├── config/sena.php          (administrador inicial y límites del login)
 ├── database/
 │   ├── migrations/
 │   └── seeders/AdminSeeder.php
@@ -300,9 +278,8 @@ El login bloquea temporalmente tras varios intentos fallidos (`config/sena.php`)
 │   ├── dashboard.blade.php
 │   ├── aprendices/
 │   ├── fichas/
-│   ├── acciones/
-│   ├── remisiones/
-│   └── emails/
+│   ├── importaciones/
+│   └── juicios/
 └── routes/web.php
 ```
 

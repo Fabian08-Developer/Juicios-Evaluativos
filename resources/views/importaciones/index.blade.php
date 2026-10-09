@@ -124,6 +124,7 @@
                     <th style="padding: 1rem;">APRENDICES</th>
                     <th style="padding: 1rem;">DURACIÓN</th>
                     <th style="padding: 1rem;">ESTADO</th>
+                    <th style="padding: 1rem;">CAMBIOS</th>
                     <th style="padding: 1rem;">FECHA</th>
                 </tr>
             </thead>
@@ -142,7 +143,9 @@
                         </div>
                     </td>
                     <td style="padding: 1rem;">
-                        @if($imp->id_ficha)
+                        @if($imp->id_ficha && isset($fichasExistentes[$imp->id_ficha]))
+                            <a href="{{ route('fichas.historial', $imp->id_ficha) }}" title="Línea de tiempo de la ficha" style="font-weight: 700; color: var(--primary); text-decoration: none;">{{ $imp->id_ficha }} <i class="fa-solid fa-chart-line" style="font-size: 0.75rem;"></i></a>
+                        @elseif($imp->id_ficha)
                             <span style="font-weight: 700; color: var(--primary);">{{ $imp->id_ficha }}</span>
                         @else
                             <span style="color: var(--text-muted);">—</span>
@@ -162,13 +165,17 @@
                             {{ $imp->estado_visual['label'] }}
                         </span>
                     </td>
-                    <td style="padding: 1rem; border-radius: 0 12px 12px 0; color: var(--text-muted); font-size: 0.85rem;">
+                    <td style="padding: 1rem;">
+                        @include('importaciones._insignias', ['imp' => $imp])
+                    </td>
+                    <td style="padding: 1rem; border-radius: 0 12px 12px 0; color: var(--text-muted); font-size: 0.85rem; white-space: nowrap;">
                         {{ $imp->created_at->format('d/m/Y H:i') }}
+                        <div><a href="{{ route('importaciones.show', $imp) }}" style="color: var(--accent); font-size: 0.75rem;">Ver cambios →</a></div>
                     </td>
                 </tr>
                 @empty
                 <tr>
-                    <td colspan="7" style="padding: 4rem; text-align: center; color: var(--text-muted);">
+                    <td colspan="8" style="padding: 4rem; text-align: center; color: var(--text-muted);">
                         <i class="fa-solid fa-inbox" style="font-size: 3rem; margin-bottom: 1rem; display: block; opacity: 0.2;"></i>
                         No hay importaciones registradas todavía.
                         <div style="margin-top: 1rem;">

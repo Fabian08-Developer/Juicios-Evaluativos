@@ -21,9 +21,6 @@
         </a>
     </div>
     <div style="display: flex; gap: 0.75rem; flex-wrap: wrap;">
-        <a href="{{ route('acciones.simulador', $aprendiz->Id_Aprendiz) }}" class="btn btn-primary" style="background: linear-gradient(135deg, var(--primary), var(--primary-dark)); font-weight: 800; box-shadow: 0 8px 20px -4px var(--primary-glow);">
-            <i class="fa-solid fa-wand-magic-sparkles"></i> Simular Plan de Salvación
-        </a>
         <a href="{{ route('aprendices.pdf', $aprendiz->Id_Aprendiz) }}" class="btn" style="background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); font-weight: 800;">
             <i class="fa-solid fa-file-pdf"></i> Expediente PDF
         </a>
@@ -84,6 +81,38 @@
             <canvas id="radarChart" style="max-width:100%;"></canvas>
         </div>
         @endif
+
+        <!-- Historial de avance (cambios detectados en cada reporte importado) -->
+        <div class="card">
+            <h4 style="margin-bottom:1rem;color:var(--text-muted);font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em;">Historial de avance</h4>
+            @forelse($historial as $cambiosDeCarga)
+                @php
+                    $carga     = $cambiosDeCarga->first()->importacion;
+                    $aprobados = $cambiosDeCarga->where('tipo', \App\Models\ImportacionCambio::JUICIO_APROBADO);
+                    $otros     = $cambiosDeCarga->where('tipo', '!=', \App\Models\ImportacionCambio::JUICIO_APROBADO);
+                @endphp
+                <div style="padding:0.75rem 0;border-top:1px solid rgba(255,255,255,0.05);font-size:0.82rem;">
+                    <a href="{{ route('importaciones.show', $carga) }}" style="color:var(--text-muted);font-size:0.72rem;text-decoration:none;">{{ $carga->created_at->format('d/m/Y') }} · {{ $carga->nombre_archivo }}</a>
+                    @if($aprobados->isNotEmpty())
+                        <div style="color:#86efac;font-weight:700;margin-top:0.2rem;">
+                            +{{ $aprobados->count() }} RAP aprobado(s)
+                            <span style="color:var(--text-muted);font-weight:400;font-size:0.72rem;">{{ $aprobados->map(fn ($c) => $c->resultado->Codigo ?? '?')->take(5)->implode(', ') }}{{ $aprobados->count() > 5 ? ', …' : '' }}</span>
+                        </div>
+                    @endif
+                    @foreach($otros as $c)
+                        <div style="color:#f1f5f9;margin-top:0.2rem;">
+                            {{ \App\Models\ImportacionCambio::ETIQUETAS[$c->tipo] ?? $c->tipo }}:
+                            <span style="color:var(--text-muted);">
+                                @if($c->valor_anterior && $c->valor_nuevo){{ $c->valor_anterior }} → {{ $c->valor_nuevo }}@else{{ $c->valor_nuevo ?? $c->valor_anterior }}@endif
+                                @if($c->resultado) ({{ $c->resultado->Codigo }})@endif
+                            </span>
+                        </div>
+                    @endforeach
+                </div>
+            @empty
+                <div style="color:var(--text-muted);font-size:0.82rem;">Aún no hay cambios registrados. Aparecerán aquí a medida que subas nuevos reportes de su ficha.</div>
+            @endforelse
+        </div>
 
     </div>
 

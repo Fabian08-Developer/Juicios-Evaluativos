@@ -8,6 +8,7 @@ use App\Models\Competencia;
 use App\Models\Ficha;
 use App\Models\Funcionario;
 use App\Models\Importacion;
+use App\Models\ImportacionCambio;
 use App\Models\JuicioEvaluativo;
 use App\Models\Programa;
 use App\Models\Resultado;
@@ -28,6 +29,10 @@ use Illuminate\Support\Facades\Log;
  *    filas siguientes fallaban y el COMMIT final descartaba TODO, aunque la
  *    pantalla informara que se habían procesado.)
  *  - Una importación sin ningún registro válido no escribe nada en la base.
+ *  - Historial: se registra qué cambió frente a la carga anterior de la ficha
+ *    (importacion_cambios) y una foto con los conteos (importaciones.resumen).
+ *    La primera carga de una ficha es la «carga inicial»: no hay contra qué
+ *    comparar, así que solo se guarda la foto.
  */
 class ImportadorJuiciosService
 {
@@ -44,10 +49,16 @@ class ImportadorJuiciosService
 
     /** @var array<int,array{fila:int,dato:string,error:string}> */
     private array $errores = [];
-    /** @var array<string,int|string> aprendices que ya estaban en otra ficha: documento => ficha anterior */
-    private array $aprendicesMovidos = [];
     private int $juiciosProcesados = 0;
-    private int $aprobacionesLocalesConservadas = 0;
+
+    /** @var array<int,array<string,mixed>> cambios confirmados frente a la carga anterior */
+    private array $cambios = [];
+    /** @var array<int,array<string,mixed>> cambios de la fila en curso: se confirman solo si la fila no falla */
+    private array $cambiosFila = [];
+    /** La ficha no tenía juicios antes de esta carga: no hay contra qué comparar. */
+    private bool $cargaInicial = false;
+    /** @var array<string,bool> documentos de aprendices creados en esta carga */
+    private array $aprendicesNuevos = [];
 
     /**
      * @param  array<int,array<int,mixed>>  $filas  Filas de la hoja (Excel::toArray)
@@ -93,27 +104,28 @@ class ImportadorJuiciosService
         }
 
         // ── 2. Escribir: transacción externa + savepoint por fila ─────────────
-        $conservarLocales = (bool) config('sena.importacion.conservar_aprobados_locales', true);
+        $aprendicesProcesados = DB::transaction(function () use ($reporte, $numeroFicha, $importacion) {
+            $this->cargaInicial = ! JuicioEvaluativo::whereHas('aprendiz', fn ($q) => $q->where('Id_Ficha', $numeroFicha))->exists();
 
-        $aprendicesProcesados = DB::transaction(function () use ($reporte, $numeroFicha, $conservarLocales) {
             $ficha = $this->asegurarFichaYPrograma($reporte, $numeroFicha);
             $aprendicesOk = [];
 
             foreach ($reporte->registros as $registro) {
-                $movidosAntes = $this->aprendicesMovidos;
+                $this->cambiosFila = [];
 
                 try {
                     // Transacción anidada => SAVEPOINT: si falla, solo se revierte esta fila.
-                    DB::transaction(fn () => $this->procesarRegistro($registro, $ficha, $conservarLocales));
+                    DB::transaction(fn () => $this->procesarRegistro($registro, $ficha));
 
                     $this->juiciosProcesados++;
                     $aprendicesOk[$registro['documento']] = true;
+                    array_push($this->cambios, ...$this->cambiosFila);
                 } catch (\Throwable $e) {
                     // Lo que esta fila creó fue revertido: las cachés en memoria ya no
-                    // son confiables (podrían apuntar a registros inexistentes).
+                    // son confiables (podrían apuntar a registros inexistentes), y sus
+                    // cambios se descartan junto con ella.
                     $this->cacheAprendices = $this->cacheCompetencias = $this->cacheResultados = [];
                     $this->cacheFuncionarios = $this->cacheJuicios = [];
-                    $this->aprendicesMovidos = $movidosAntes;
 
                     $this->errores[] = [
                         'fila'  => $registro['fila'],
@@ -123,6 +135,9 @@ class ImportadorJuiciosService
                     Log::warning("[Importador] Fila {$registro['fila']} omitida: " . $e->getMessage());
                 }
             }
+
+            $this->registrarAusentes($ficha, $reporte);
+            $this->guardarCambios($importacion);
 
             return count($aprendicesOk);
         });
@@ -182,7 +197,7 @@ class ImportadorJuiciosService
     }
 
     /** @param  array<string,mixed>  $r  Registro normalizado de ReporteSofiaPlus */
-    private function procesarRegistro(array $r, Ficha $ficha, bool $conservarLocales): void
+    private function procesarRegistro(array $r, Ficha $ficha): void
     {
         $aprendiz = $this->resolverAprendiz($r, $ficha);
         $resultadoId = $this->resolverResultado($r);
@@ -192,14 +207,11 @@ class ImportadorJuiciosService
         $juicio = $this->juiciosDe($aprendiz)->get($resultadoId);
 
         if ($juicio) {
-            // Una aprobación hecha a mano en la matriz no se borra porque el
-            // Excel (aún) diga "POR EVALUAR". Si el Excel ya la trae aprobada,
-            // el dato oficial prevalece.
-            if ($conservarLocales && $estado === 0 && (int) $juicio->Estado === 1 && $juicio->registrado_por !== null) {
-                $this->aprobacionesLocalesConservadas++;
-                return;
-            }
+            $estadoAnterior = (int) $juicio->Estado;
 
+            // Sofia Plus es la única fuente de los juicios: el reporte manda.
+            // (registrado_por => null limpia marcas de la antigua calificación
+            // manual, que ya no existe en el sistema.)
             $juicio->fill([
                 'Estado'         => $estado,
                 'Id_Funcionario' => $funcionarioId,
@@ -207,6 +219,13 @@ class ImportadorJuiciosService
                 'Fecha'          => $r['fecha']?->toDateString(),
                 'Hora'           => $r['fecha'],
             ])->save();
+
+            if ($estadoAnterior !== $estado) {
+                $this->anotarCambio(
+                    $estado === 1 ? ImportacionCambio::JUICIO_APROBADO : ImportacionCambio::JUICIO_REVERTIDO,
+                    $aprendiz, $resultadoId, self::etiquetaJuicio($estadoAnterior), self::etiquetaJuicio($estado)
+                );
+            }
 
             return;
         }
@@ -220,6 +239,11 @@ class ImportadorJuiciosService
             'Hora'           => $r['fecha'],
         ]);
         $this->juiciosDe($aprendiz)->put($resultadoId, $nuevo);
+
+        // Un aprendiz nuevo ya queda registrado como tal: no se anota cada uno de sus RAP.
+        if (! isset($this->aprendicesNuevos[$aprendiz->Documento])) {
+            $this->anotarCambio(ImportacionCambio::JUICIO_NUEVO, $aprendiz, $resultadoId, null, self::etiquetaJuicio($estado));
+        }
     }
 
     private function resolverAprendiz(array $r, Ficha $ficha): Aprendiz
@@ -240,14 +264,24 @@ class ImportadorJuiciosService
         $aprendiz = Aprendiz::where('Documento', $doc)->first();
 
         if ($aprendiz) {
+            $estadoAnterior = $aprendiz->Estado;
+
             if ((int) $aprendiz->Id_Ficha !== (int) $ficha->Id_Ficha) {
                 // El documento es único en todo el sistema: el aprendiz "se mueve".
-                // Sus juicios anteriores se conservan; se avisa al usuario.
-                $this->aprendicesMovidos[$doc] = $aprendiz->Id_Ficha;
+                // Sus juicios anteriores se conservan; se avisa al usuario (también en
+                // la carga inicial de la ficha).
+                $this->anotarCambio(ImportacionCambio::APRENDIZ_MOVIDO, $aprendiz, null,
+                    (string) $aprendiz->Id_Ficha, (string) $ficha->Id_Ficha, siempre: true);
             }
             $aprendiz->fill($datos)->save();
+
+            if ($estadoAnterior !== $r['estado']) {
+                $this->anotarCambio(ImportacionCambio::APRENDIZ_ESTADO, $aprendiz, null, $estadoAnterior, $r['estado']);
+            }
         } else {
             $aprendiz = Aprendiz::create(['Documento' => $doc] + $datos);
+            $this->aprendicesNuevos[$doc] = true;
+            $this->anotarCambio(ImportacionCambio::APRENDIZ_NUEVO, $aprendiz, null, null, $r['estado']);
         }
 
         return $this->cacheAprendices[$doc] = $aprendiz;
@@ -307,13 +341,16 @@ class ImportadorJuiciosService
     {
         $a = [];
 
-        if ($this->aprendicesMovidos) {
-            $a[] = count($this->aprendicesMovidos) . ' aprendiz(es) ya estaban registrados en otra ficha y fueron movidos a esta '
-                . '(sus juicios anteriores se conservan): documentos ' . implode(', ', array_slice(array_keys($this->aprendicesMovidos), 0, 10))
-                . (count($this->aprendicesMovidos) > 10 ? ', …' : '') . '.';
+        $movidos = array_column($this->cambiosDeTipo(ImportacionCambio::APRENDIZ_MOVIDO), 'documento');
+        if ($movidos) {
+            $a[] = count($movidos) . ' aprendiz(es) ya estaban registrados en otra ficha y fueron movidos a esta '
+                . '(sus juicios anteriores se conservan): documentos ' . implode(', ', array_slice($movidos, 0, 10))
+                . (count($movidos) > 10 ? ', …' : '') . '.';
         }
-        if ($this->aprobacionesLocalesConservadas) {
-            $a[] = "{$this->aprobacionesLocalesConservadas} juicio(s) aprobados manualmente en la matriz se conservaron aunque el Excel aún los muestra «POR EVALUAR».";
+        $revertidos = count($this->cambiosDeTipo(ImportacionCambio::JUICIO_REVERTIDO));
+        if ($revertidos) {
+            $a[] = "{$revertidos} juicio(s) pasaron de APROBADO a POR EVALUAR frente a la carga anterior. "
+                . '¿Subiste un reporte más antiguo? Revisa el detalle de esta importación.';
         }
         if ($reporte->juiciosDesconocidos) {
             $a[] = 'Valores de juicio no reconocidos (se tomaron como pendientes): '
@@ -333,6 +370,9 @@ class ImportadorJuiciosService
         $mensaje = $this->juiciosProcesados > 0
             ? "Ficha {$ficha}: se importaron {$this->juiciosProcesados} juicios de {$aprendices} aprendices."
             : 'No se importó ningún juicio.';
+        if ($this->juiciosProcesados > 0) {
+            $mensaje .= ' ' . $this->textoCambios();
+        }
         if ($this->errores) {
             $mensaje .= ' ' . count($this->errores) . ' fila(s) omitidas con error.';
         }
@@ -341,13 +381,15 @@ class ImportadorJuiciosService
         }
 
         return [
-            'status'       => 'success',
-            'message'      => $mensaje,
-            'procesados'   => $this->juiciosProcesados,
-            'aprendices'   => $aprendices,
-            'errores'      => $this->errores,
-            'advertencias' => $advertencias,
-            'detalles'     => ['ficha' => $ficha],
+            'status'        => 'success',
+            'message'       => $mensaje,
+            'procesados'    => $this->juiciosProcesados,
+            'aprendices'    => $aprendices,
+            'errores'       => $this->errores,
+            'advertencias'  => $advertencias,
+            'carga_inicial' => $this->cargaInicial,
+            'cambios'       => $this->conteoCambios(),
+            'detalles'      => ['ficha' => $ficha],
         ];
     }
 
@@ -373,6 +415,8 @@ class ImportadorJuiciosService
             'duracion_segundos'     => (int) round(microtime(true) - $inicio),
             'estado'                => $this->errores ? 'con_advertencias' : 'exitoso',
             'detalle'               => implode("\n", $detalle),
+            // Sin registros escritos no hay foto: la carga no entra en la línea de tiempo.
+            'resumen'               => $reporte && $this->juiciosProcesados > 0 ? $this->calcularResumen($ficha) : null,
         ]);
     }
 
@@ -380,7 +424,158 @@ class ImportadorJuiciosService
     {
         $this->cacheCompetencias = $this->cacheResultados = $this->cacheFuncionarios = [];
         $this->cacheAprendices = $this->cacheJuicios = [];
-        $this->errores = $this->aprendicesMovidos = [];
-        $this->juiciosProcesados = $this->aprobacionesLocalesConservadas = 0;
+        $this->errores = $this->cambios = $this->cambiosFila = $this->aprendicesNuevos = [];
+        $this->juiciosProcesados = 0;
+        $this->cargaInicial = false;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    //  Historial entre reportes
+    // ══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Anota un cambio de la fila en curso. En la carga inicial no se anota nada
+     * (no hay carga anterior con qué comparar), salvo que sea un aviso que
+     * siempre interesa ($siempre), como un aprendiz que llega de otra ficha.
+     */
+    private function anotarCambio(string $tipo, Aprendiz $aprendiz, ?int $resultadoId, ?string $anterior, ?string $nuevo, bool $siempre = false): void
+    {
+        if ($this->cargaInicial && ! $siempre) {
+            return;
+        }
+
+        $this->cambiosFila[] = [
+            'tipo'           => $tipo,
+            'Id_Aprendiz'    => $aprendiz->Id_Aprendiz,
+            'Id_Resultado'   => $resultadoId,
+            'valor_anterior' => $anterior,
+            'valor_nuevo'    => $nuevo,
+            'documento'      => $aprendiz->Documento,   // solo para los mensajes; no se guarda
+        ];
+    }
+
+    /** Aprendices de la ficha que no vienen en este reporte (no se borran; solo se anotan). */
+    private function registrarAusentes(Ficha $ficha, ReporteSofiaPlus $reporte): void
+    {
+        if ($this->cargaInicial) {
+            return;
+        }
+
+        // Todos los documentos del archivo, incluidos los de filas con error, para
+        // no marcar como ausente a alguien que sí vino.
+        $enArchivo = array_values(array_unique(array_merge(
+            array_column($reporte->registros, 'documento'),
+            array_column($reporte->errores, 'dato')
+        )));
+
+        Aprendiz::where('Id_Ficha', $ficha->Id_Ficha)
+            ->whereNotIn('Documento', $enArchivo)
+            ->get()
+            ->each(function (Aprendiz $ausente) {
+                $this->cambios[] = [
+                    'tipo'           => ImportacionCambio::APRENDIZ_AUSENTE,
+                    'Id_Aprendiz'    => $ausente->Id_Aprendiz,
+                    'Id_Resultado'   => null,
+                    'valor_anterior' => $ausente->Estado,
+                    'valor_nuevo'    => null,
+                    'documento'      => $ausente->Documento,
+                ];
+            });
+    }
+
+    private function guardarCambios(?Importacion $importacion): void
+    {
+        if (! $importacion || ! $this->cambios) {
+            return;
+        }
+
+        $filas = array_map(fn (array $c) => [
+            'importacion_id' => $importacion->id,
+            'Id_Aprendiz'    => $c['Id_Aprendiz'],
+            'Id_Resultado'   => $c['Id_Resultado'],
+            'tipo'           => $c['tipo'],
+            'valor_anterior' => $c['valor_anterior'] !== null ? mb_substr($c['valor_anterior'], 0, 100) : null,
+            'valor_nuevo'    => $c['valor_nuevo'] !== null ? mb_substr($c['valor_nuevo'], 0, 100) : null,
+        ], $this->cambios);
+
+        foreach (array_chunk($filas, 500) as $lote) {
+            DB::table('importacion_cambios')->insert($lote);
+        }
+    }
+
+    /** @return array<int,array<string,mixed>> */
+    private function cambiosDeTipo(string $tipo): array
+    {
+        return array_values(array_filter($this->cambios, fn ($c) => $c['tipo'] === $tipo));
+    }
+
+    /** @return array<string,int> tipo => cantidad */
+    private function conteoCambios(): array
+    {
+        return array_count_values(array_column($this->cambios, 'tipo'));
+    }
+
+    /** «Frente a la carga anterior: +312 aprobados, 1 cambio de estado.» */
+    private function textoCambios(): string
+    {
+        if ($this->cargaInicial) {
+            return 'Es la carga inicial de la ficha: desde la próxima importación verás qué cambió.';
+        }
+
+        $c = $this->conteoCambios();
+        $partes = array_filter([
+            isset($c[ImportacionCambio::JUICIO_APROBADO]) ? "+{$c[ImportacionCambio::JUICIO_APROBADO]} aprobados" : null,
+            isset($c[ImportacionCambio::JUICIO_REVERTIDO]) ? "{$c[ImportacionCambio::JUICIO_REVERTIDO]} revertidos" : null,
+            isset($c[ImportacionCambio::APRENDIZ_ESTADO]) ? "{$c[ImportacionCambio::APRENDIZ_ESTADO]} cambio(s) de estado" : null,
+            isset($c[ImportacionCambio::APRENDIZ_NUEVO]) ? "{$c[ImportacionCambio::APRENDIZ_NUEVO]} aprendiz(es) nuevo(s)" : null,
+            isset($c[ImportacionCambio::APRENDIZ_AUSENTE]) ? "{$c[ImportacionCambio::APRENDIZ_AUSENTE]} ausente(s)" : null,
+            isset($c[ImportacionCambio::JUICIO_NUEVO]) ? "{$c[ImportacionCambio::JUICIO_NUEVO]} RAP nuevo(s)" : null,
+        ]);
+
+        return $partes
+            ? 'Frente a la carga anterior: ' . implode(', ', $partes) . '.'
+            : 'Sin cambios frente a la carga anterior.';
+    }
+
+    /** Foto de la ficha tras la carga (para la línea de tiempo). */
+    private function calcularResumen(string $ficha): array
+    {
+        $porEstado = Aprendiz::where('Id_Ficha', $ficha)
+            ->select('Estado', DB::raw('COUNT(*) as n'))
+            ->groupBy('Estado')
+            ->pluck('n', 'Estado')
+            ->map(fn ($n) => (int) $n)
+            ->all();
+
+        $j = DB::table('juicios_evaluativos as j')
+            ->join('aprendiz as a', 'a.Id_Aprendiz', '=', 'j.Id_Aprendiz')
+            ->where('a.Id_Ficha', $ficha)
+            ->selectRaw('COUNT(*) as total')
+            ->selectRaw('SUM(CASE WHEN j."Estado" = 1 THEN 1 ELSE 0 END) as aprobados')
+            ->selectRaw('SUM(CASE WHEN a."Estado" = ? THEN 1 ELSE 0 END) as total_ef', ['EN FORMACION'])
+            ->selectRaw('SUM(CASE WHEN a."Estado" = ? AND j."Estado" = 1 THEN 1 ELSE 0 END) as aprobados_ef', ['EN FORMACION'])
+            ->first();
+
+        $total = (int) $j->total;
+        $aprobados = (int) $j->aprobados;
+        $totalEf = (int) $j->total_ef;
+        $aprobadosEf = (int) $j->aprobados_ef;
+
+        return [
+            'carga_inicial'           => $this->cargaInicial,
+            'aprendices'              => array_sum($porEstado),
+            'por_estado'              => $porEstado,
+            'juicios'                 => $total,
+            'aprobados'               => $aprobados,
+            'pendientes'              => $total - $aprobados,
+            'aprobados_en_formacion'  => $aprobadosEf,
+            'pendientes_en_formacion' => $totalEf - $aprobadosEf,
+            'cambios'                 => $this->conteoCambios(),
+        ];
+    }
+
+    private static function etiquetaJuicio(int $estado): string
+    {
+        return $estado === 1 ? 'APROBADO' : 'POR EVALUAR';
     }
 }
